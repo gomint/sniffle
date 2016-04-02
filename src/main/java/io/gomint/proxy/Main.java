@@ -3,6 +3,8 @@ package io.gomint.proxy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.SocketException;
+
 /**
  * @author BlackyPaw
  * @version 1.0
@@ -13,6 +15,7 @@ public class Main {
 
 	private static String ip;
 	private static int port = 19132;
+	private static int listenPort = 19132;
 
 	/**
 	 * Main entry point for the application.
@@ -24,8 +27,13 @@ public class Main {
 			return;
 		}
 
-		Proxy proxy = new Proxy();
-
+		Proxy proxy = new Proxy( ip, port );
+		try {
+			proxy.bind( "0.0.0.0", listenPort );
+		} catch (SocketException e) {
+			e.printStackTrace();
+			return;
+		}
 	}
 
 	/**
@@ -57,7 +65,23 @@ public class Main {
 						return false;
 					}
 				} else {
-					logger.error( "Malformed '--ip' command line option: Please specify actual IP value" );
+					logger.error( "Malformed '--port' command line option: Please specify actual IP value" );
+					return false;
+				}
+			} else if ( args[i].startsWith( "--lport" ) ) {
+				String[] split = args[i].split( "=" );
+				if ( split.length == 2 ) {
+					try {
+						listenPort = Integer.valueOf( split[1] );
+						if ( port < 0 || port > 65535 ) {
+							throw new NumberFormatException();
+						}
+					} catch ( NumberFormatException e ) {
+						logger.error( "Malformed '--lport' command line option: Please specify valid integer port value" );
+						return false;
+					}
+				} else {
+					logger.error( "Malformed '--lport' command line option: Please specify actual IP value" );
 					return false;
 				}
 			} else {
@@ -67,7 +91,7 @@ public class Main {
 		}
 
 		if ( ip == null ) {
-			logger.error( "Missing obligatory command-line parameer '--ip'" );
+			logger.error( "Missing obligatory command-line parameter '--ip'" );
 			return false;
 		}
 
