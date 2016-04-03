@@ -133,8 +133,8 @@ public class Proxy {
 	}
 
 	void notifyConnectionAttemptSucceeded( Connection connection ) {
-		this.serverReader = new PacketRedirectThread( this.serverConnection, connection, true );
-		this.clientReader = new PacketRedirectThread( connection, this.serverConnection, false );
+		this.serverReader = new PacketRedirectThread( connection, this.serverConnection, true );
+		this.clientReader = new PacketRedirectThread( this.serverConnection, connection, false );
 
 		File dumpFolder = new File( "dumps", new SimpleDateFormat( "yyMMdd_HHmmss" ).format( new Date() ) );
 		if ( !dumpFolder.exists() ) {
