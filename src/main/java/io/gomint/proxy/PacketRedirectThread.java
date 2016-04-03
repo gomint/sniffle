@@ -47,7 +47,7 @@ public class PacketRedirectThread extends Thread {
 
         this.running = new AtomicBoolean( true );
 
-        this.batchIntermediate = new byte[1024];
+        this.batchIntermediate = new byte[4];
         this.batchDecompressor = new Inflater();
     }
 
@@ -105,6 +105,10 @@ public class PacketRedirectThread extends Thread {
         byte packetId = buffer.readByte();
         if ( packetId == (byte) 0x8E ) {
             packetId = buffer.readByte();
+
+            byte[] oldData = packetData;
+            packetData = new byte[packetData.length - 1];
+            System.arraycopy( oldData, 1, packetData, 0, packetData.length );
         }
 
         if ( packetId == (byte) 0x92 ) {
@@ -122,7 +126,7 @@ public class PacketRedirectThread extends Thread {
             return;
         }
 
-        buffer.skip( 4 );               // Compressed payload length (not of interest; only uncompressed size matteres)
+        buffer.skip( 4 );               // Compressed payload length (not of interest; only uncompressed size matters)
 
         this.batchDecompressor.reset();
         this.batchDecompressor.setInput( buffer.getBuffer(), buffer.getPosition(), buffer.getRemaining() );
@@ -130,25 +134,32 @@ public class PacketRedirectThread extends Thread {
         byte[] payload;
         try {
             // Only inflate decompressed payload size before allocating the actual payload array:
-            this.batchDecompressor.inflate( this.batchIntermediate, 0, 4 );
-            int decompressedSize = ( ( this.batchIntermediate[0] & 255 ) << 24 |
-                    ( this.batchIntermediate[1] & 255 ) << 16 |
-                    ( this.batchIntermediate[2] & 255 ) << 8 |
-                    ( this.batchIntermediate[3] & 255 ) );
+            while ( !this.batchDecompressor.finished() ) {
+                if ( this.batchDecompressor.inflate( this.batchIntermediate ) != 4 ) {
+                    LOGGER.warn( "Received malformed batch packet" );
+                    return;
+                }
 
-            if ( decompressedSize < 0 ) {
-                LOGGER.warn( "Received malformed batch packet; declared negative payload size (" + decompressedSize + ")" );
-                return;
+                int decompressedSize = ( ( this.batchIntermediate[0] & 255 ) << 24 |
+                        ( this.batchIntermediate[1] & 255 ) << 16 |
+                        ( this.batchIntermediate[2] & 255 ) << 8 |
+                        ( this.batchIntermediate[3] & 255 ) ); // Read integer
+
+                if ( decompressedSize < 0 ) {
+                    LOGGER.warn( "Received malformed batch packet; declared negative payload size (" + decompressedSize + ")" );
+                    return;
+                }
+
+                payload = new byte[decompressedSize];
+                if ( this.batchDecompressor.inflate( payload ) != payload.length ) {
+                    LOGGER.warn( "Received malformed batch packet" );
+                    return;
+                }
+                this.handlePacket( payload, true );
             }
-
-            payload = new byte[decompressedSize];
-            this.batchDecompressor.inflate( payload );
         } catch ( DataFormatException e ) {
             LOGGER.warn( "Received malformed batch packet", e );
-            return;
         }
-
-        this.handlePacket( payload, true );
     }
 
     /**

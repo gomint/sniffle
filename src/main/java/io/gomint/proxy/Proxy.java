@@ -14,7 +14,10 @@ import io.gomint.jraknet.SocketEventHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.net.SocketException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
 /**
  * @author BlackyPaw
@@ -133,7 +136,19 @@ public class Proxy {
 		this.serverReader = new PacketRedirectThread( this.serverConnection, connection, true );
 		this.clientReader = new PacketRedirectThread( connection, this.serverConnection, false );
 
-		// TODO add packet handlers
+		File dumpFolder = new File( "dumps", new SimpleDateFormat( "yyMMdd_HHmmss" ).format( new Date() ) );
+		if ( !dumpFolder.exists() ) {
+
+			if ( dumpFolder.mkdirs() ) {
+				PacketDumper dumper = new PacketDumper( dumpFolder );
+
+				this.serverReader.addProcessedPacketHandler( dumper );
+				this.clientReader.addProcessedPacketHandler( dumper );
+			} else {
+				LOGGER.warn( "Can't create dump directory" );
+			}
+
+		}
 
 		this.serverReader.start();
 		this.clientReader.start();
