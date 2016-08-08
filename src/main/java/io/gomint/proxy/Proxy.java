@@ -136,6 +136,9 @@ public class Proxy {
 		this.serverReader = new PacketRedirectThread( connection, this.serverConnection, true );
 		this.clientReader = new PacketRedirectThread( this.serverConnection, connection, false );
 
+		this.serverReader.addProcessedPacketHandler( new KnownPacketHandler( connection ) );
+		this.clientReader.addProcessedPacketHandler( new KnownPacketHandler( this.serverConnection ) );
+
 		File dumpFolder = new File( "dumps", new SimpleDateFormat( "yyMMdd_HHmmss" ).format( new Date() ) );
 		if ( !dumpFolder.exists() ) {
 

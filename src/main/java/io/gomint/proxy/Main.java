@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.SocketException;
+import java.security.Security;
 
 /**
  * @author BlackyPaw
@@ -33,6 +34,8 @@ public class Main {
 		if ( !parseCommandLineArguments( args ) ) {
 			return;
 		}
+
+		Security.addProvider( new org.bouncycastle.jce.provider.BouncyCastleProvider() );
 
 		Proxy proxy = new Proxy( ip, port );
 		try {

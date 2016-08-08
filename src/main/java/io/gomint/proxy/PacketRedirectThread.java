@@ -8,16 +8,20 @@
 package io.gomint.proxy;
 
 import io.gomint.jraknet.Connection;
+import io.gomint.jraknet.EncapsulatedPacket;
 import io.gomint.jraknet.PacketBuffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.zip.DataFormatException;
 import java.util.zip.Inflater;
+import java.util.zip.InflaterInputStream;
 
 /**
  * @author Schuwi
@@ -35,7 +39,7 @@ public class PacketRedirectThread extends Thread {
     private final List<ProxiedPacketHandler> processedPacketHandlers = new ArrayList<>();
     private final AtomicBoolean running;
 
-    private final byte[]   batchIntermediate;
+    private final byte[] batchIntermediate;
     private final Inflater batchDecompressor;
 
     public PacketRedirectThread( Connection inbound, Connection outbound, boolean fromServer ) {
@@ -55,7 +59,7 @@ public class PacketRedirectThread extends Thread {
      * Adds a {@link ProxiedPacketHandler} to the end of the raw packet handler list, all raw handlers will be called on
      * receivement of an incoming packet with the raw packet data
      *
-     * @param handler    May modify the packet data, gets called after all handlers that are already added
+     * @param handler May modify the packet data, gets called after all handlers that are already added
      */
     public void addRawPacketHandler( ProxiedPacketHandler handler ) {
         rawPacketHandlers.add( handler );
@@ -65,10 +69,10 @@ public class PacketRedirectThread extends Thread {
      * Adds a {@link ProxiedPacketHandler} to the end of the processed packet handler list, all processed handlers will
      * be called after the raw packet handlers and with processed packet data. So the packet id is always first byte
      * (no 0x8E) and batch packets have been merged.
-     *
+     * <p>
      * Note: Modifications made to the packetData will be ignored
      *
-     * @param handler    May modify the packet data, gets called after all handlers that are already added
+     * @param handler May modify the packet data, gets called after all handlers that are already added
      */
     public void addProcessedPacketHandler( ProxiedPacketHandler handler ) {
         processedPacketHandlers.add( handler );
@@ -77,25 +81,28 @@ public class PacketRedirectThread extends Thread {
     @Override
     public void run() {
         while ( running.get() ) {
-            byte[] packetData = this.inbound.receive();
+            EncapsulatedPacket packetData = this.inbound.poll();
             if ( packetData == null ) {
                 try {
                     Thread.sleep( 1L );
                 } catch ( InterruptedException e ) {
                     e.printStackTrace();
                 }
+
                 continue;
             }
 
+            byte[] packetDataRaw = packetData.getPacketData();
             for ( ProxiedPacketHandler packetHandler : rawPacketHandlers ) {
-                packetData = packetHandler.handlePacket( packetData, this.fromServer, false );
-                if ( packetData == null )
+                packetDataRaw = packetHandler.handlePacket( packetDataRaw, this.fromServer, false );
+                if ( packetDataRaw == null ) {
                     break; // Don't call any handlers with null packets
+                }
             }
 
-            if ( packetData != null ) {
-                this.handlePacket( packetData, false );
-                this.outbound.sendCopy( packetData );
+            if ( packetDataRaw != null ) {
+                this.handlePacket( packetDataRaw, false );
+                this.outbound.sendCopy( packetDataRaw );
             }
         }
     }
@@ -103,7 +110,7 @@ public class PacketRedirectThread extends Thread {
     private void handlePacket( byte[] packetData, boolean batch ) {
         PacketBuffer buffer = new PacketBuffer( packetData, 0 );
         byte packetId = buffer.readByte();
-        if ( packetId == (byte) 0x8E ) {
+        if ( packetId == (byte) 0xFE ) {
             packetId = buffer.readByte();
 
             byte[] oldData = packetData;
@@ -111,7 +118,7 @@ public class PacketRedirectThread extends Thread {
             System.arraycopy( oldData, 1, packetData, 0, packetData.length );
         }
 
-        if ( packetId == (byte) 0x92 ) {
+        if ( packetId == (byte) 0x06 ) {
             handleBatchPacket( buffer, batch );
         } else {
             for ( ProxiedPacketHandler packetHandler : processedPacketHandlers ) {
@@ -121,44 +128,9 @@ public class PacketRedirectThread extends Thread {
     }
 
     private void handleBatchPacket( PacketBuffer buffer, boolean batch ) {
-        if ( batch ) {
-            LOGGER.error( "Invalid nested batch packets" );
-            return;
-        }
-
-        buffer.skip( 4 );               // Compressed payload length (not of interest; only uncompressed size matters)
-
-        this.batchDecompressor.reset();
-        this.batchDecompressor.setInput( buffer.getBuffer(), buffer.getPosition(), buffer.getRemaining() );
-
-        byte[] payload;
-        try {
-            // Only inflate decompressed payload size before allocating the actual payload array:
-            while ( !this.batchDecompressor.finished() ) {
-                if ( this.batchDecompressor.inflate( this.batchIntermediate ) != 4 ) {
-                    LOGGER.warn( "Received malformed batch packet" );
-                    return;
-                }
-
-                int decompressedSize = ( ( this.batchIntermediate[0] & 255 ) << 24 |
-                        ( this.batchIntermediate[1] & 255 ) << 16 |
-                        ( this.batchIntermediate[2] & 255 ) << 8 |
-                        ( this.batchIntermediate[3] & 255 ) ); // Read integer
-
-                if ( decompressedSize < 0 ) {
-                    LOGGER.warn( "Received malformed batch packet; declared negative payload size (" + decompressedSize + ")" );
-                    return;
-                }
-
-                payload = new byte[decompressedSize];
-                if ( this.batchDecompressor.inflate( payload ) != payload.length ) {
-                    LOGGER.warn( "Received malformed batch packet" );
-                    return;
-                }
-                this.handlePacket( payload, true );
-            }
-        } catch ( DataFormatException e ) {
-            LOGGER.warn( "Received malformed batch packet", e );
+        List<PacketBuffer> buffers = Util.handleBatchPacket( buffer, batch );
+        for ( PacketBuffer packetBuffer : buffers ) {
+            this.handlePacket( packetBuffer.getBuffer(), true );
         }
     }
 

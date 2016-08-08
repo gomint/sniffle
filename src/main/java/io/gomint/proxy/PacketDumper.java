@@ -31,7 +31,7 @@ public class PacketDumper implements ProxiedPacketHandler {
     }
 
     @Override
-    public byte[] handlePacket(byte[] packetData, boolean fromServer, boolean batch) {
+    public byte[] handlePacket( byte[] packetData, boolean fromServer, boolean batch ) {
         PacketBuffer buffer = new PacketBuffer( packetData, 0 );
         byte packetId = buffer.readByte();
         int count = currentPacket.getAndIncrement();
@@ -40,23 +40,24 @@ public class PacketDumper implements ProxiedPacketHandler {
         File dump = new File( dumpFolder, fileName );
 
         // Dump buffer contents
+        int rowCounter = 1;
         try ( OutputStream out = new FileOutputStream( dump, true ) ) {
             try ( BufferedWriter writer = new BufferedWriter( new OutputStreamWriter( out ) ) ) {
-                writer.write( String.format("# Packet dump of 0x%02x%s\n", packetId, batch ? " in batch" : "" ) );
+                writer.write( String.format( "# Packet dump of 0x%02x%s\n", packetId, batch ? " in batch" : "" ) );
                 writer.write( "-------------------------------------\n" );
                 writer.write( "# Textual payload\n" );
                 StringBuilder lineBuilder = new StringBuilder();
                 while ( buffer.getRemaining() > 0 ) {
                     for ( int i = 0; i < 16 && buffer.getRemaining() > 0; ++i ) {
-                        lineBuilder.append( String.format("%02x", buffer.readByte()) );
+                        lineBuilder.append( String.format( "%02x", buffer.readByte() ) );
                         if ( i + 1 < 16 && buffer.getRemaining() > 0 ) {
                             lineBuilder.append( " " );
                         }
                     }
-                    lineBuilder.append( "\n" );
+                    lineBuilder.append( "     // " ).append( rowCounter++ * 16 ).append( "\n" );
 
                     writer.write( lineBuilder.toString() );
-                    lineBuilder.setLength(0);
+                    lineBuilder.setLength( 0 );
                 }
                 writer.write( "-------------------------------------\n" );
                 writer.write( "# Binary payload\n" );
