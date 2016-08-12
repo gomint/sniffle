@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-package io.gomint.proxy.packet;
+package io.gomint.proxy.network;
 
 import io.gomint.jraknet.PacketBuffer;
 

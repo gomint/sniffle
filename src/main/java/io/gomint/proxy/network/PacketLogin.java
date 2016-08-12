@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-package io.gomint.proxy.packet;
+package io.gomint.proxy.network;
 
 import io.gomint.jraknet.PacketBuffer;
 import io.jsonwebtoken.Claims;
@@ -75,7 +75,7 @@ public class PacketLogin extends Packet {
      * Construct a new login packet which contains all data to login into a MC:PE server
      */
     public PacketLogin() {
-        super( Protocol.LOGIN_PACKET );
+        super( (byte) 0 );
     }
 
     @Override
@@ -134,6 +134,9 @@ public class PacketLogin extends Packet {
         byteBuffer.order( ByteOrder.LITTLE_ENDIAN );
         byte[] stringBuffer = new byte[byteBuffer.getInt()];
         byteBuffer.get( stringBuffer );
+        
+        System.out.println( "JSON:" ) ;
+        System.out.println( new String( stringBuffer ) );
 
         // Decode the json stuff
         try {

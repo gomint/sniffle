@@ -5,43 +5,36 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-package io.gomint.proxy;
+package io.gomint.proxy.network;
 
 import io.gomint.jraknet.ClientSocket;
 import io.gomint.jraknet.Socket;
 import io.gomint.jraknet.SocketEvent;
 import io.gomint.jraknet.SocketEventHandler;
+import io.gomint.proxy.network.ConnectionManager;
 
 /**
  * @author BlackyPaw
  * @version 1.0
  */
-class ProxySocketEventHandler implements SocketEventHandler {
+public class ClientSocketEventHandler implements SocketEventHandler {
 
-	private final Proxy proxy;
+	private final ConnectionManager connectionManager;
 
-	public ProxySocketEventHandler( Proxy proxy ) {
-		this.proxy = proxy;
+	public ClientSocketEventHandler( ConnectionManager connectionManager ) {
+		this.connectionManager = connectionManager;
 	}
 
 	@Override
 	public void onSocketEvent( Socket socket, SocketEvent event ) {
 		switch ( event.getType() ) {
 			case NEW_INCOMING_CONNECTION:
-				this.proxy.notifyNewIncomingConnection( event.getConnection() );
+				this.connectionManager.prepareIncomingConnection( event.getConnection() );
 				break;
 
 			case CONNECTION_CLOSED:
 			case CONNECTION_DISCONNECTED:
-				this.proxy.notifyConnectionClosed( event.getConnection() );
-				break;
-
-			case CONNECTION_ATTEMPT_FAILED:
-				this.proxy.notifyConnectionAttemptFailed( event.getReason() );
-				break;
-
-			case CONNECTION_ATTEMPT_SUCCEEDED:
-				this.proxy.notifyConnectionAttemptSucceeded( ( (ClientSocket) socket ).getConnection() );
+				this.connectionManager.notifyClientDisconnected( event.getConnection() );
 				break;
 		}
 	}
