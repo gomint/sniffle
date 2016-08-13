@@ -16,7 +16,7 @@ import io.gomint.jraknet.PacketBuffer;
 public class PacketServerHandshake extends Packet {
 	
 	private String publicKeyBase64;
-	private byte[] initializationVector;
+	private byte[] sha256Salt;
 	
 	public PacketServerHandshake() {
 		super( PacketRegistry.PACKET_SERVER_HANDSHAKE );
@@ -30,26 +30,26 @@ public class PacketServerHandshake extends Packet {
 		this.publicKeyBase64 = publicKeyBase64;
 	}
 	
-	public byte[] getInitializationVector() {
-		return this.initializationVector;
+	public byte[] getSha256Salt() {
+		return this.sha256Salt;
 	}
 	
-	public void setInitializationVector( byte[] initializationVector ) {
-		this.initializationVector = initializationVector;
+	public void setSha256Salt( byte[] sha256Salt ) {
+		this.sha256Salt = sha256Salt;
 	}
 	
 	@Override
 	public void serialize( PacketBuffer buffer ) {
 		buffer.writeString( this.publicKeyBase64 );
-		buffer.writeUShort( this.initializationVector.length );
-		buffer.writeBytes( this.initializationVector );
+		buffer.writeUShort( this.sha256Salt.length );
+		buffer.writeBytes( this.sha256Salt );
 	}
 	
 	@Override
 	public void deserialize( PacketBuffer buffer ) {
 		this.publicKeyBase64 = buffer.readString();
-		this.initializationVector = new byte[buffer.readUShort()];
-		buffer.readBytes( this.initializationVector );
+		this.sha256Salt = new byte[buffer.readUShort()];
+		buffer.readBytes( this.sha256Salt );
 	}
 	
 }

@@ -2,6 +2,16 @@ package io.gomint.proxy.network;
 
 import io.gomint.proxy.jwt.JwtToken;
 import io.gomint.proxy.jwt.MojangChainValidator;
+import org.bouncycastle.crypto.BufferedBlockCipher;
+import org.bouncycastle.crypto.InvalidCipherTextException;
+import org.bouncycastle.crypto.agreement.ECDHBasicAgreement;
+import org.bouncycastle.crypto.digests.SHA256Digest;
+import org.bouncycastle.crypto.engines.RijndaelEngine;
+import org.bouncycastle.crypto.modes.CFBBlockCipher;
+import org.bouncycastle.crypto.params.KeyParameter;
+import org.bouncycastle.crypto.params.ParametersWithIV;
+import org.bouncycastle.crypto.util.PrivateKeyFactory;
+import org.bouncycastle.crypto.util.PublicKeyFactory;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
@@ -9,23 +19,13 @@ import org.json.simple.parser.ParseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.crypto.BadPaddingException;
-import javax.crypto.Cipher;
-import javax.crypto.IllegalBlockSizeException;
-import javax.crypto.KeyAgreement;
-import javax.crypto.NoSuchPaddingException;
-import javax.crypto.SecretKey;
-import javax.crypto.spec.IvParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.security.InvalidAlgorithmParameterException;
-import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
-import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
 import java.security.PrivateKey;
@@ -35,7 +35,6 @@ import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.UUID;
 
@@ -118,22 +117,22 @@ public class EncryptionHandler {
 	private final Logger logger = LoggerFactory.getLogger( EncryptionHandler.class );
 	
 	// Client Side:
-	private boolean     xboxLiveLogin;
-	private String      xboxUID;
-	private String      clientUsername;
-	private UUID        clientUUID;
-	private ECPublicKey clientPublicKey;
-	private Cipher      clientEncryptCipher;
-	private Cipher      clientDecryptCipher;
-	private byte[]      clientInitializationVector;
+	private boolean             xboxLiveLogin;
+	private String              xboxUID;
+	private String              clientUsername;
+	private UUID                clientUUID;
+	private ECPublicKey         clientPublicKey;
+	private BufferedBlockCipher clientEncryptor;
+	private BufferedBlockCipher clientDecryptor;
+	private byte[]              clientSalt;
+	private boolean             clientEncryptionEnabled;
 	
 	// Server Side:
-	private ECPublicKey serverPublicKey;
-	private Cipher      serverEncryptCipher;
-	private Cipher      serverDecryptCipher;
+	private ECPublicKey         serverPublicKey;
+	private BufferedBlockCipher serverEncryptor;
+	private BufferedBlockCipher serverDecryptor;
 	
-	// Proxy itself:
-	private KeyPair encryptionKeyPair;
+	// Miscellaneous:
 	
 	public EncryptionHandler() {
 		this.xboxLiveLogin = false;
@@ -141,6 +140,7 @@ public class EncryptionHandler {
 		this.clientUsername = null;
 		this.clientUUID = null;
 		this.clientPublicKey = null;
+		this.clientEncryptionEnabled = false;
 	}
 	
 	/**
@@ -290,32 +290,28 @@ public class EncryptionHandler {
 	/**
 	 * Sets up everything required for encrypting and decrypting networking data received from the proxied server.
 	 *
-	 * @param initializationVector The initialization vector sent to us from the server to set up the AES-128 cipher
+	 * @param salt The salt to prepend in front of the ECDH derived shared secret before hashing it (sent to us from the
+	 *             proxied server in a 0x03 packet)
 	 */
-	public boolean beginServersideEncryption( byte[] initializationVector ) {
-		SecretKey secret = this.generateSharedSecret( PROXY_KEY_PAIR.getPrivate(), this.serverPublicKey );
+	public boolean beginServersideEncryption( byte[] salt ) {
+		if ( this.serverEncryptor != null && this.serverDecryptor != null ) {
+			// Already initialized:
+			return true;
+		}
+		
+		// Generate shared secret from ECDH keys:
+		byte[] secret = this.generateECDHSecret( PROXY_KEY_PAIR.getPrivate(), this.serverPublicKey );
 		if ( secret == null ) {
 			return false;
 		}
 		
-		IvParameterSpec iv = new IvParameterSpec( initializationVector );
+		// Derive key as salted SHA-256 hash digest:
+		byte[] key = this.hashSHA256( this.concatenateByteArrays( this.clientSalt, secret ) );
+		byte[] iv  = this.takeBytesFromArray( key, 0, 16 );
 		
-		try {
-			this.serverEncryptCipher = Cipher.getInstance( "AES/CBC/PKCS5Padding" );
-			this.serverDecryptCipher = Cipher.getInstance( "AES/CBC/PKCS5Padding" );
-		} catch ( NoSuchAlgorithmException | NoSuchPaddingException e ) {
-			this.logger.error( "Failed to retrieve AES Cipher instance", e );
-			return false;
-		}
-		
-		try {
-			this.serverEncryptCipher.init( Cipher.ENCRYPT_MODE, secret, iv );
-			this.serverDecryptCipher.init( Cipher.DECRYPT_MODE, secret, iv );
-		} catch ( InvalidKeyException | InvalidAlgorithmParameterException e ) {
-			this.logger.error( "Failed to setup AES Cipher instances", e );
-			return false;
-		}
-		
+		// Initialize BlockCiphers:
+		this.serverEncryptor = this.createCipher( true, key, iv );
+		this.serverDecryptor = this.createCipher( false, key, iv );
 		return true;
 	}
 	
@@ -325,113 +321,119 @@ public class EncryptionHandler {
 	 * @return Whether or not the setup completed successfully
 	 */
 	public boolean beginClientsideEncryption() {
-		if ( this.clientEncryptCipher != null || this.clientDecryptCipher != null ) {
+		if ( this.isEncryptionFromClientEnabled() ) {
 			// Already initialized:
 			return true;
 		}
 		
-		SecretKey secret = this.generateSharedSecret( PROXY_KEY_PAIR.getPrivate(), this.clientPublicKey );
+		// Generate a random salt:
+		SecureRandom random = new SecureRandom();
+		this.clientSalt = new byte[16];
+		random.nextBytes( this.clientSalt );
+		
+		// Generate shared secret from ECDH keys:
+		byte[] secret = this.generateECDHSecret( PROXY_KEY_PAIR.getPrivate(), this.clientPublicKey );
 		if ( secret == null ) {
 			return false;
 		}
 		
-		SecureRandom random = new SecureRandom();
-		byte[] iv = new byte[16];
-		random.nextBytes( iv );
+		// Derive key as salted SHA-256 hash digest:
+		byte[] key = this.hashSHA256( this.concatenateByteArrays( this.clientSalt, secret ) );
+		byte[] iv  = this.takeBytesFromArray( key, 0, 16 );
 		
-		try ( BufferedWriter writer = new BufferedWriter( new FileWriter( "server.iv.bin" ) ) ) {
-			writer.write( Base64.getEncoder().encodeToString( iv ) );
-		} catch ( IOException e ) {
-			e.printStackTrace();
-		}
-		
-		IvParameterSpec spec = new IvParameterSpec( iv );
-		
-		try {
-			this.clientEncryptCipher = Cipher.getInstance( "AES/CFB/NoPadding" );
-			this.clientDecryptCipher = Cipher.getInstance( "AES/CFB/NoPadding" );
-		} catch ( NoSuchAlgorithmException | NoSuchPaddingException e ) {
-			this.logger.error( "Failed to retrieve AES Cipher instance", e );
-			return false;
-		}
-		
-		try {
-			this.clientEncryptCipher.init( Cipher.ENCRYPT_MODE, secret, spec );
-			this.clientDecryptCipher.init( Cipher.DECRYPT_MODE, secret, spec );
-		} catch ( InvalidKeyException | InvalidAlgorithmParameterException e ) {
-			this.logger.error( "Failed to setup AES Cipher instances", e );
-			return false;
-		}
-		
-		this.clientInitializationVector = iv;
+		// Initialize BlockCiphers:
+		this.clientEncryptor = this.createCipher( true, key, iv );
+		this.clientDecryptor = this.createCipher( false, key, iv );
 		return true;
 	}
 	
-	public byte[] decryptClientside( byte[] input, int offset, int length ) {
-		if ( this.clientDecryptCipher == null ) {
-			return input;
+	public byte[] getClientSalt() {
+		return this.clientSalt;
+	}
+	
+	public boolean isEncryptionFromClientEnabled() {
+		return ( this.clientEncryptor != null && this.clientDecryptor != null );
+	}
+	
+	public boolean isEncryptionToClientEnabled() {
+		return ( this.clientEncryptionEnabled );
+	}
+	
+	public void setEncryptionToClientEnabled( boolean enabled ) {
+		this.clientEncryptionEnabled = enabled;
+	}
+	
+	public byte[] decryptInputFromClient( byte[] input, int offset, int length ) {
+		return this.processCipher( this.clientDecryptor, input, offset, length );
+	}
+	
+	public byte[] encryptInputFromServer( byte[] input, int offset, int length ) {
+		return this.processCipher( this.serverDecryptor, input, offset, length );
+	}
+	
+	public byte[] encryptInputForClient( byte[] input, int offset, int length ) {
+		return this.processCipher( this.clientEncryptor, input, offset, length );
+	}
+	
+	public byte[] encryptInputForServer( byte[] input, int offset, int length ) {
+		return this.processCipher( this.serverEncryptor, input, offset, length );
+	}
+	
+	private byte[] processCipher( BufferedBlockCipher cipher, byte[] input, int offset, int length ) {
+		byte[] output = new byte[cipher.getOutputSize( length )];
+		int    cursor = cipher.processBytes( input, offset, length, output, 0 );
+		try {
+			cursor += cipher.doFinal( output, cursor );
+			if ( cursor != output.length ) {
+				throw new InvalidCipherTextException( "Output size did not match cursor" );
+			}
+		} catch ( InvalidCipherTextException e ) {
+			this.logger.error( "Could not encrypt/decrypt to/from cipher-text", e );
+			return null;
 		}
-		
-		try ( BufferedWriter writer = new BufferedWriter( new FileWriter( "client.encrypted.bin" ) ) ) {
-			writer.write( Base64.getEncoder().encodeToString( Arrays.copyOfRange( input, offset, length ) ) );
+		return output;
+	}
+	
+	// ========================================== Utility Methods
+	
+	private byte[] generateECDHSecret( PrivateKey privateKey, PublicKey publicKey ) {
+		try {
+			ECDHBasicAgreement agreement = new ECDHBasicAgreement();
+			agreement.init( PrivateKeyFactory.createKey( privateKey.getEncoded() ) );
+			return agreement.calculateAgreement( PublicKeyFactory.createKey( publicKey.getEncoded() ) ).toByteArray();
 		} catch ( IOException e ) {
-			e.printStackTrace();
-		}
-		
-		try {
-			return this.clientDecryptCipher.doFinal( input, offset, length );
-		} catch ( IllegalBlockSizeException | BadPaddingException e ) {
-			this.logger.error( "Failed to decrypt client-side packet data", e );
-			return new byte[0];
+			this.logger.error( "Failed to generate Elliptic-Curve-Diffie-Hellman Shared Secret for clientside encryption", e );
+			return null;
 		}
 	}
 	
-	/**
-	 * Gets the initialization vector used for initializing the client cipher instance.
-	 *
-	 * @return The initialization vector used for initializing the client's cipher
-	 */
-	public byte[] getClientInitializationVector() {
-		return this.clientInitializationVector;
+	private byte[] concatenateByteArrays( byte[] a, byte[] b ) {
+		byte[] result = new byte[a.length + b.length];
+		System.arraycopy( a, 0, result, 0, a.length );
+		System.arraycopy( b, 0, result, a.length, b.length );
+		return result;
 	}
 	
+	private byte[] takeBytesFromArray( byte[] buffer, int offset, int length ) {
+		byte[] result = new byte[length];
+		System.arraycopy( buffer, offset, result, 0, length );
+		return result;
+	}
 	
-	private SecretKey generateSharedSecret( PrivateKey privateKey, PublicKey publicKey ) {
-		KeyAgreement agreement;
-		try {
-			agreement = KeyAgreement.getInstance( "ECDH", "BC" );
-		} catch ( NoSuchAlgorithmException | NoSuchProviderException e ) {
-			System.err.println( "Could not find BouncyCastle Key Provider - please ensure that you have installed BouncyCastle properly" );
-			System.exit( -1 );
-			return null;
-		}
+	private byte[] hashSHA256( byte[] message ) {
+		SHA256Digest digest = new SHA256Digest();
 		
-		try {
-			agreement.init( privateKey );
-			agreement.doPhase( publicKey, true );
-		} catch ( InvalidKeyException e ) {
-			this.logger.error( "Failed to generate key agreement for server-side encryption", e );
-			return null;
-		}
+		byte[] result = new byte[digest.getDigestSize()];
+		digest.update( message, 0, message.length );
+		digest.doFinal( result, 0 );
 		
-		SecretKey secret;
-		try {
-			secret = agreement.generateSecret( "AES" );
-		} catch ( NoSuchAlgorithmException | InvalidKeyException e ) {
-			this.logger.error( "Failed to generate key agreement secret for AES cipher", e );
-			return null;
-		}
-		
-		try {
-			MessageDigest digest = MessageDigest.getInstance( "SHA-256" );
-		} catch ( NoSuchAlgorithmException e ) {
-			e.printStackTrace();
-		}
-		
-		byte[] truncated = new byte[16];
-		System.arraycopy( secret.getEncoded(), 0, truncated, 0, 16 );
-		
-		return new SecretKeySpec( truncated, "AES" );
+		return result;
+	}
+	
+	private BufferedBlockCipher createCipher( boolean encryptor, byte[] key, byte[] iv ) {
+		BufferedBlockCipher cipher = new BufferedBlockCipher( new CFBBlockCipher( new RijndaelEngine( 128 ), 8 ) );
+		cipher.init( encryptor, new ParametersWithIV( new KeyParameter( key ), iv ) );
+		return cipher;
 	}
 	
 	/**
