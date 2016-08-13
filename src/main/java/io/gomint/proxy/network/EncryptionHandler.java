@@ -17,11 +17,15 @@ import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
 import java.security.PrivateKey;
@@ -31,6 +35,7 @@ import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.UUID;
 
@@ -97,6 +102,17 @@ public class EncryptionHandler {
 		
 		// Generate the keypair:
 		PROXY_KEY_PAIR = generator.generateKeyPair();
+		
+		try ( BufferedWriter writer = new BufferedWriter( new FileWriter( "server.public.key" ) ) ) {
+			writer.write( Base64.getEncoder().encodeToString( PROXY_KEY_PAIR.getPublic().getEncoded() ) );
+		} catch ( IOException e ) {
+			e.printStackTrace();
+		}
+		try ( BufferedWriter writer = new BufferedWriter( new FileWriter( "server.private.key" ) ) ) {
+			writer.write( Base64.getEncoder().encodeToString( PROXY_KEY_PAIR.getPrivate().getEncoded() ) );
+		} catch ( IOException e ) {
+			e.printStackTrace();
+		}
 	}
 	
 	private final Logger logger = LoggerFactory.getLogger( EncryptionHandler.class );
@@ -252,6 +268,12 @@ public class EncryptionHandler {
 		this.xboxUID = chainValidator.getXboxId();
 		this.clientPublicKey = chainValidator.getClientPublicKey();
 		
+		try ( BufferedWriter writer = new BufferedWriter( new FileWriter( "client.public.key" ) ) ) {
+			writer.write( Base64.getEncoder().encodeToString( this.clientPublicKey.getEncoded() ) );
+		} catch ( IOException e ) {
+			e.printStackTrace();
+		}
+		
 		this.logger.info( "Client provided JWT Chain: [authenticated=" + this.xboxLiveLogin + ", username=" + this.clientUsername + ", uuid=" + this.clientUUID + ", xuid=" + this.xboxUID + "]" );
 	}
 	
@@ -317,6 +339,12 @@ public class EncryptionHandler {
 		byte[] iv = new byte[16];
 		random.nextBytes( iv );
 		
+		try ( BufferedWriter writer = new BufferedWriter( new FileWriter( "server.iv.bin" ) ) ) {
+			writer.write( Base64.getEncoder().encodeToString( iv ) );
+		} catch ( IOException e ) {
+			e.printStackTrace();
+		}
+		
 		IvParameterSpec spec = new IvParameterSpec( iv );
 		
 		try {
@@ -343,6 +371,13 @@ public class EncryptionHandler {
 		if ( this.clientDecryptCipher == null ) {
 			return input;
 		}
+		
+		try ( BufferedWriter writer = new BufferedWriter( new FileWriter( "client.encrypted.bin" ) ) ) {
+			writer.write( Base64.getEncoder().encodeToString( Arrays.copyOfRange( input, offset, length ) ) );
+		} catch ( IOException e ) {
+			e.printStackTrace();
+		}
+		
 		try {
 			return this.clientDecryptCipher.doFinal( input, offset, length );
 		} catch ( IllegalBlockSizeException | BadPaddingException e ) {
@@ -387,14 +422,16 @@ public class EncryptionHandler {
 			return null;
 		}
 		
-		return secret;
+		try {
+			MessageDigest digest = MessageDigest.getInstance( "SHA-256" );
+		} catch ( NoSuchAlgorithmException e ) {
+			e.printStackTrace();
+		}
 		
-		/*
 		byte[] truncated = new byte[16];
 		System.arraycopy( secret.getEncoded(), 0, truncated, 0, 16 );
 		
 		return new SecretKeySpec( truncated, "AES" );
-		*/
 	}
 	
 	/**

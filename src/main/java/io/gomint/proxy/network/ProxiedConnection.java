@@ -156,6 +156,7 @@ public class ProxiedConnection {
 	 * @param raw The raw data received
 	 */
 	public void handleServerboundPacketRaw( EncapsulatedPacket raw ) {
+		/*
 		byte[] data = raw.getPacketData();
 		if ( data.length <= 0 ) {
 			return;
@@ -165,8 +166,11 @@ public class ProxiedConnection {
 		if ( data[0] == (byte) 0xFE ) {
 			offset++;
 		}
+		*/
 		
-		byte[] decrypted = this.encryptionHandler.decryptClientside( data, offset, data.length - offset );
+		byte[] data = raw.getPacketData();
+		
+		byte[] decrypted = this.encryptionHandler.decryptClientside( data, 0, data.length );
 		PacketBuffer buffer = new PacketBuffer( decrypted, 0 );
 		
 		while ( buffer.getRemaining() > 0 ) {
@@ -294,6 +298,12 @@ public class ProxiedConnection {
 		this.clientSkin = packet.getSkin();
 		this.encryptionHandler.supplyClientJWTChain( packet.getJwt() );
 		if ( this.encryptionHandler.hasObligatoryInformation() ) {
+			this.encryptionHandler.beginClientsideEncryption();
+			
+			PacketServerHandshake handshake = new PacketServerHandshake();
+			handshake.setPublicKeyBase64( Base64.getEncoder().encodeToString( EncryptionHandler.PROXY_KEY_PAIR.getPublic().getEncoded() ) );
+			handshake.setInitializationVector( this.encryptionHandler.getClientInitializationVector() );
+			this.sendToClient( handshake );
 			this.connectToBackendServer( this.connectionManager.getProxy().getFallbackServer() );
 		} else {
 			this.clientConnection.disconnect( "Invalid Handshake" );
@@ -309,12 +319,7 @@ public class ProxiedConnection {
 		this.encryptionHandler.setServerPublicKey( packet.getPublicKeyBase64() );
 		this.encryptionHandler.beginServersideEncryption( packet.getInitializationVector() );
 		
-		this.encryptionHandler.beginClientsideEncryption();
 		
-		PacketServerHandshake handshake = new PacketServerHandshake();
-		handshake.setPublicKeyBase64( Base64.getEncoder().encodeToString( EncryptionHandler.PROXY_KEY_PAIR.getPublic().getEncoded() ) );
-		handshake.setInitializationVector( this.encryptionHandler.getClientInitializationVector() );
-		this.sendToClient( handshake );
 		
 		// Tell the server that we are ready to receive encrypted packets from now on:
 		PacketEncryptionReady response = new PacketEncryptionReady();
