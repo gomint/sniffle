@@ -116,13 +116,13 @@ public class ProxiedConnection {
 		synchronized ( this.clientPacketQueue ) {
 			byte[] datagram;
 			byte[] payload = this.batchPackets( this.clientPacketQueue );
-			datagram = new byte[payload.length + 1];
 			if ( this.encryptionHandler.isEncryptionToClientEnabled() ) {
 				// Encrypt once we received 0x04 ENCRYPTION_READY:
-				datagram = this.encryptionHandler.encryptInputForClient( datagram, 0, datagram.length );
+				payload = this.encryptionHandler.encryptInputForClient( payload, 0, payload.length );
 			}
 			
 			// Prepend 0xFE:
+			datagram = new byte[payload.length + 1];
 			datagram[0] = (byte) 0xFE;
 			System.arraycopy( payload, 0, datagram, 1, payload.length );
 			
@@ -131,7 +131,18 @@ public class ProxiedConnection {
 		
 		if ( this.proxiedConnection != null && this.proxiedConnection.isConnected() ) {
 			synchronized ( this.serverPacketQueue ) {
-				byte[] datagram = this.batchPackets( this.serverPacketQueue );
+				byte[] datagram;
+				byte[] payload = this.batchPackets( this.serverPacketQueue );
+				if ( this.encryptionHandler.isEncryptionToServerEnabled() ) {
+					// Encrypt once we received 0x04 ENCRYPTION_READY:
+					payload = this.encryptionHandler.encryptInputForServer( payload, 0, payload.length );
+				}
+				
+				// Prepend 0xFE:
+				datagram = new byte[payload.length + 1];
+				datagram[0] = (byte) 0xFE;
+				System.arraycopy( payload, 0, datagram, 1, payload.length );
+				
 				this.proxiedConnection.send( PacketReliability.RELIABLE_ORDERED, datagram );
 			}
 		} else {
@@ -149,7 +160,20 @@ public class ProxiedConnection {
 	 * @param raw The raw data received
 	 */
 	public void handleClientboundPacketRaw( EncapsulatedPacket raw ) {
-		PacketBuffer buffer = new PacketBuffer( raw.getPacketData(), 0 );
+		// Skip 0xFE datagram header:
+		if ( raw.getPacketData().length <= 1 ) {
+			// We need at least one byte of packet data:
+			return;
+		}
+		
+		int          offset = ( raw.getPacketData()[0] == (byte) 0xFE ? 1 : 0 );
+		PacketBuffer buffer;
+		if ( this.encryptionHandler.isEncryptionFromServerEnabled() ) {
+			byte[] decrypted = this.encryptionHandler.decryptInputFromServer( raw.getPacketData(), offset, raw.getPacketData().length - offset );
+			buffer = new PacketBuffer( decrypted, 0 );
+		} else {
+			buffer = new PacketBuffer( raw.getPacketData(), offset );
+		}
 		
 		while ( buffer.getRemaining() > 0 ) {
 			byte packetID = this.extractRealPacketID( buffer );
@@ -346,11 +370,9 @@ public class ProxiedConnection {
 		this.encryptionHandler.setServerPublicKey( packet.getPublicKeyBase64() );
 		this.encryptionHandler.beginServersideEncryption( packet.getSha256Salt() );
 		
-		
-		
 		// Tell the server that we are ready to receive encrypted packets from now on:
 		PacketEncryptionReady response = new PacketEncryptionReady();
-		// this.sendToServer( response );
+		this.sendToServer( response );
 	}
 	
 	/**

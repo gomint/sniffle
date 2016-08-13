@@ -294,7 +294,7 @@ public class EncryptionHandler {
 	 *             proxied server in a 0x03 packet)
 	 */
 	public boolean beginServersideEncryption( byte[] salt ) {
-		if ( this.serverEncryptor != null && this.serverDecryptor != null ) {
+		if ( this.isEncryptionFromServerEnabled() ) {
 			// Already initialized:
 			return true;
 		}
@@ -359,6 +359,14 @@ public class EncryptionHandler {
 		return ( this.clientEncryptionEnabled );
 	}
 	
+	public boolean isEncryptionFromServerEnabled() {
+		return ( this.serverEncryptor != null && this.serverDecryptor != null );
+	}
+	
+	public boolean isEncryptionToServerEnabled() {
+		return this.isEncryptionFromServerEnabled();
+	}
+	
 	public void setEncryptionToClientEnabled( boolean enabled ) {
 		this.clientEncryptionEnabled = enabled;
 	}
@@ -367,7 +375,7 @@ public class EncryptionHandler {
 		return this.processCipher( this.clientDecryptor, input, offset, length );
 	}
 	
-	public byte[] encryptInputFromServer( byte[] input, int offset, int length ) {
+	public byte[] decryptInputFromServer( byte[] input, int offset, int length ) {
 		return this.processCipher( this.serverDecryptor, input, offset, length );
 	}
 	
