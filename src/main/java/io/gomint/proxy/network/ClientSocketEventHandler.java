@@ -36,7 +36,16 @@ public class ClientSocketEventHandler implements SocketEventHandler {
 			case CONNECTION_DISCONNECTED:
 				this.connectionManager.notifyClientDisconnected( event.getConnection() );
 				break;
+
+			case UNCONNECTED_PING:
+				this.handleUnconnectedPing( event );
+				break;
 		}
+	}
+
+	private void handleUnconnectedPing( SocketEvent event ) {
+		// Fire ping event so plugins can modify the motd and player amounts
+		event.getPingPongInfo().setMotd( "MCPE;MITM Proxy;113;1.1.0.55;0;1" );
 	}
 
 }

@@ -7,16 +7,12 @@
 
 package io.gomint.proxy;
 
-import io.gomint.proxy.jwt.JwtSignatureException;
-import io.gomint.proxy.jwt.JwtToken;
-import io.gomint.proxy.jwt.MojangLoginForger;
 import io.gomint.proxy.network.EncryptionHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.SocketException;
 import java.security.Security;
-import java.util.UUID;
 
 /**
  * @author BlackyPaw

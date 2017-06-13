@@ -2,8 +2,14 @@ package io.gomint.proxy.network;
 
 import io.gomint.jraknet.*;
 import io.gomint.proxy.Util;
+import io.gomint.proxy.jwt.JwtAlgorithm;
+import io.gomint.proxy.jwt.JwtSignatureException;
+import io.gomint.proxy.jwt.JwtToken;
 import io.gomint.proxy.jwt.MojangLoginForger;
-import org.json.simple.JSONArray;
+import io.gomint.proxy.network.packet.Packet;
+import io.gomint.proxy.network.packet.PacketClientHandshake;
+import io.gomint.proxy.network.packet.PacketEncryptionReady;
+import io.gomint.proxy.network.packet.PacketServerHandshake;
 import org.json.simple.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,6 +17,8 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayOutputStream;
 import java.net.InetSocketAddress;
 import java.net.SocketException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.*;
 import java.util.zip.DataFormatException;
 import java.util.zip.Deflater;
@@ -26,8 +34,6 @@ public class ProxiedConnection {
 
     // Client:
     private final Connection clientConnection;
-    private int clientProtocol;
-    private byte[] clientSkin;
     private Queue<Packet> clientPacketQueue;
 
     // Server:
@@ -41,7 +47,7 @@ public class ProxiedConnection {
     private Deflater cachedDeflater;
     private byte[] intermediateBuffer;
     private PacketBuffer intermediatePacketBuffer;
-
+    private JSONObject skinData;
     private EncryptionHandler encryptionHandler;
 
     /**
@@ -92,50 +98,28 @@ public class ProxiedConnection {
         EncapsulatedPacket packet;
 
         while ( ( packet = this.clientConnection.receive() ) != null ) {
-            this.handleServerboundPacketRaw( packet );
+            this.handleServerboundPacketRaw( new PacketBuffer( packet.getPacketData(), 0 ) );
         }
 
         if ( this.proxiedConnection != null && this.proxiedConnection.isConnected() ) {
             while ( ( packet = this.proxiedConnection.receive() ) != null ) {
-                this.handleClientboundPacketRaw( packet );
+                this.handleClientboundPacketRaw( new PacketBuffer( packet.getPacketData(), 0 ) );
             }
         }
 
         // Send out all enqueued packets:
         synchronized ( this.clientPacketQueue ) {
             if ( this.clientPacketQueue.size() > 0 ) {
-                byte[] datagram;
                 byte[] payload = this.batchPackets( this.clientPacketQueue, "Client" );
-                if ( this.encryptionHandler.isEncryptionToClientEnabled() ) {
-                    // Encrypt once we received 0x04 ENCRYPTION_READY:
-                    payload = this.encryptionHandler.encryptInputForClient( payload, 0, payload.length );
-                }
-
-                // Prepend 0xFE:
-                datagram = new byte[payload.length + 1];
-                datagram[0] = (byte) 0xFE;
-                System.arraycopy( payload, 0, datagram, 1, payload.length );
-
-                this.clientConnection.send( PacketReliability.RELIABLE, datagram );
+                this.clientConnection.send( PacketReliability.RELIABLE_ORDERED, 0, payload );
             }
         }
 
         if ( this.proxiedConnection != null && this.proxiedConnection.isConnected() ) {
             synchronized ( this.serverPacketQueue ) {
                 if ( this.serverPacketQueue.size() > 0 ) {
-                    byte[] datagram;
                     byte[] payload = this.batchPackets( this.serverPacketQueue, "Server" );
-                    if ( this.encryptionHandler.isEncryptionToServerEnabled() ) {
-                        // Encrypt once we received 0x04 ENCRYPTION_READY:
-                        payload = this.encryptionHandler.encryptInputForServer( payload, 0, payload.length );
-                    }
-
-                    // Prepend 0xFE:
-                    datagram = new byte[payload.length + 1];
-                    datagram[0] = (byte) 0xFE;
-                    System.arraycopy( payload, 0, datagram, 1, payload.length );
-
-                    this.proxiedConnection.send( PacketReliability.RELIABLE_ORDERED, datagram );
+                    this.proxiedConnection.send( PacketReliability.RELIABLE_ORDERED, 0, payload );
                 }
             }
         } else {
@@ -152,41 +136,32 @@ public class ProxiedConnection {
      *
      * @param raw The raw data received
      */
-    public void handleClientboundPacketRaw( EncapsulatedPacket raw ) {
+    public void handleClientboundPacketRaw( PacketBuffer raw ) {
         // Skip 0xFE datagram header:
-        if ( raw.getPacketData().length <= 1 ) {
+        if ( raw.getRemaining() <= 1 ) {
             // We need at least one byte of packet data:
             return;
         }
 
-        int offset = ( raw.getPacketData()[0] == (byte) 0xFE ? 1 : 0 );
-        PacketBuffer buffer;
-        if ( this.encryptionHandler.isEncryptionFromServerEnabled() ) {
-            byte[] decrypted = this.encryptionHandler.decryptInputFromServer( raw.getPacketData(), offset, raw.getPacketData().length - offset );
-            buffer = new PacketBuffer( decrypted, 0 );
-        } else {
-            buffer = new PacketBuffer( raw.getPacketData(), offset );
-        }
-
-        while ( buffer.getRemaining() > 0 ) {
-            byte packetID = this.extractRealPacketID( buffer );
+        while ( raw.getRemaining() > 0 ) {
+            byte packetID = this.extractRealPacketID( raw );
             if ( packetID == PacketRegistry.PACKET_BATCH ) {
-                for ( Packet packet : this.extractBatchPacket( buffer ) ) {
+                for ( Packet packet : this.extractBatchPacket( raw, false ) ) {
                     this.handleClientboundPacket( packet );
                 }
             } else {
-                logger.info( "Received packet with ID " + packetID + " from server - Encrypted: " + this.encryptionHandler.isEncryptionFromServerEnabled() );
+                // logger.info( "Received packet with ID " + Integer.toHexString( packetID & 0xFF ) + " from server - Encrypted: " + this.encryptionHandler.isEncryptionFromServerEnabled() );
                 Packet packet = PacketRegistry.createFromID( packetID );
                 if ( packet != null ) {
-                    packet.deserialize( buffer );
+                    packet.deserialize( raw );
                     this.handleClientboundPacket( packet );
                 } else {
                     // Unknown packet -> direct passthrough:
 
                     System.out.println( "Unknown packet with ID " + packetID );
 
-                    byte[] data = new byte[buffer.getRemaining()];
-                    buffer.readBytes( data );
+                    byte[] data = new byte[raw.getRemaining()];
+                    raw.readBytes( data );
 
                     Packet packet1 = new Packet( packetID ) {
                         @Override
@@ -214,42 +189,33 @@ public class ProxiedConnection {
      *
      * @param raw The raw data received
      */
-    public void handleServerboundPacketRaw( EncapsulatedPacket raw ) {
+    public void handleServerboundPacketRaw( PacketBuffer raw ) {
         // Skip 0xFE datagram header:
-        if ( raw.getPacketData().length <= 1 ) {
+        if ( raw.getRemaining() <= 1 ) {
             // We need at least one byte of packet data:
             return;
         }
 
-        int offset = ( raw.getPacketData()[0] == (byte) 0xFE ? 1 : 0 );
-        PacketBuffer buffer;
-        if ( this.encryptionHandler.isEncryptionFromClientEnabled() ) {
-            byte[] decrypted = this.encryptionHandler.decryptInputFromClient( raw.getPacketData(), offset, raw.getPacketData().length - offset );
-            buffer = new PacketBuffer( decrypted, 0 );
-        } else {
-            buffer = new PacketBuffer( raw.getPacketData(), offset );
-        }
-
-        while ( buffer.getRemaining() > 0 ) {
-            byte packetID = this.extractRealPacketID( buffer );
-            logger.info( "Received packet with ID " + packetID + " from client - Encrypted: " + this.encryptionHandler.isEncryptionFromClientEnabled() );
+        while ( raw.getRemaining() > 0 ) {
+            byte packetID = this.extractRealPacketID( raw );
+            // logger.info( "Received packet with ID " + Integer.toHexString( packetID & 0xFF ) + " from client - Encrypted: " + this.encryptionHandler.isEncryptionFromClientEnabled() );
 
             if ( packetID == PacketRegistry.PACKET_BATCH ) {
-                for ( Packet packet : this.extractBatchPacket( buffer ) ) {
-                    logger.info( "Received packet with ID " + packet.getId() + " from client - Batched" );
+                for ( Packet packet : this.extractBatchPacket( raw, true ) ) {
+                    // logger.info( "Received packet with ID " + Integer.toHexString( packet.getId() & 0xFF ) + " from client - Batched" );
                     this.handleServerboundPacket( packet );
                 }
             } else {
                 Packet packet = PacketRegistry.createFromID( packetID );
                 if ( packet != null ) {
-                    packet.deserialize( buffer );
+                    packet.deserialize( raw );
                     this.handleServerboundPacket( packet );
                 } else {
                     // Unknown packet -> direct passthrough:
                     System.out.println( "Unknown packet with ID " + packetID );
 
-                    byte[] data = new byte[buffer.getRemaining()];
-                    buffer.readBytes( data );
+                    byte[] data = new byte[raw.getRemaining()];
+                    raw.readBytes( data );
 
                     System.out.println( Util.toHexString( data ) );
 
@@ -350,8 +316,13 @@ public class ProxiedConnection {
             case PacketRegistry.PACKET_SERVER_HANDSHAKE:
                 this.handleServerHandshake( (PacketServerHandshake) packet );
                 break;
+            default:
+                // Pass packets to client
+                this.clientPacketQueue.add( packet );
+                break;
         }
-        System.out.println( "Received packet with ID " + packet.getId() + " from server" );
+
+        // this.logger.debug( "Received packet with ID " + packet.getId() + " from server" );
     }
 
     /**
@@ -367,6 +338,9 @@ public class ProxiedConnection {
             case PacketRegistry.PACKET_ENCRYPTION_READY:
                 this.encryptionHandler.setEncryptionToClientEnabled( true );
                 break;
+            default:
+                this.serverPacketQueue.add( packet );
+                break;
         }
     }
 
@@ -376,11 +350,28 @@ public class ProxiedConnection {
      * @param packet The handshake packet that was received
      */
     private void handleClientHandshake( PacketClientHandshake packet ) {
-        this.clientProtocol = packet.getProtocolVersion();
-        this.clientSkin = packet.getSkin();
-        this.encryptionHandler.supplyClientJWTChain( packet.getJwt() );
+        // More data please
+        ByteBuffer byteBuffer = ByteBuffer.wrap( packet.getPayload() );
+        byteBuffer.order( ByteOrder.LITTLE_ENDIAN );
+        byte[] stringBuffer = new byte[byteBuffer.getInt()];
+        byteBuffer.get( stringBuffer );
+
+        this.encryptionHandler.supplyClientJWTChain( new String( stringBuffer ) );
         if ( this.encryptionHandler.hasObligatoryInformation() ) {
             this.encryptionHandler.beginClientsideEncryption();
+
+            // Parse skin
+            byte[] skin = new byte[byteBuffer.getInt()];
+            byteBuffer.get( skin );
+
+            JwtToken skinToken = JwtToken.parse( new String( skin ) );
+
+            try {
+                skinToken.validateSignature( JwtAlgorithm.ES384, this.encryptionHandler.getTrustedKeys().get( skinToken.getHeader().getProperty( "x5u" ) ) );
+                this.skinData = skinToken.getClaims();
+            } catch ( JwtSignatureException e ) {
+                e.printStackTrace();
+            }
 
             PacketServerHandshake handshake = new PacketServerHandshake();
             handshake.setPublicKeyBase64( Base64.getEncoder()
@@ -413,29 +404,31 @@ public class ProxiedConnection {
      */
     @SuppressWarnings( "unchecked" )
     private void notifyProxiedConnectionAvailable() {
-        // Successfully connected to proxied server -> send handshake:
-        PacketClientHandshake handshake = new PacketClientHandshake();
-        handshake.setProtocolVersion( this.clientProtocol );
-
-        // Generate our own JWT chain:
-        MojangLoginForger forger = new MojangLoginForger();
-        forger.setUsername( this.encryptionHandler.getClientUsername() );
-        forger.setUUID( this.encryptionHandler.getClientUUID() );
-        forger.setPublicKey( EncryptionHandler.PROXY_KEY_PAIR.getPublic() );
-        String jwtToken = forger.forge( EncryptionHandler.PROXY_KEY_PAIR.getPrivate() );
-
-        JSONObject root = new JSONObject();
-        JSONArray chain = new JSONArray();
-        chain.add( jwtToken );
-        root.put( "chain", chain );
-
-        String jwtChain = root.toJSONString();
-
-        handshake.setJwt( jwtChain );
-        handshake.setSkin( this.clientSkin );
-
         // Send our handshake to the server -> this will trigger it to respond with a 0x03 ServerHandshake packet:
-        this.sendToServer( handshake );
+        MojangLoginForger mojangLoginForger = new MojangLoginForger();
+        mojangLoginForger.setPublicKey( EncryptionHandler.PROXY_KEY_PAIR.getPublic() );
+        mojangLoginForger.setUsername( this.encryptionHandler.getClientUsername() );
+        mojangLoginForger.setUUID( this.encryptionHandler.getClientUUID() );
+        mojangLoginForger.setSkinData( this.skinData );
+
+        String jwt = "{\"chain\":[\"" + mojangLoginForger.forge( EncryptionHandler.PROXY_KEY_PAIR.getPrivate() ) + "\"]}";
+        String skin = mojangLoginForger.forgeSkin( EncryptionHandler.PROXY_KEY_PAIR.getPrivate() );
+
+        // More data please
+        ByteBuffer byteBuffer = ByteBuffer.allocate( jwt.length() + skin.length() + 8 );
+        byteBuffer.order( ByteOrder.LITTLE_ENDIAN );
+        byteBuffer.putInt( jwt.length() );
+        byteBuffer.put( jwt.getBytes() );
+
+        // We need the skin
+        byteBuffer.putInt( skin.length() );
+        byteBuffer.put( skin.getBytes() );
+
+        PacketClientHandshake packetClientHandshake = new PacketClientHandshake();
+        packetClientHandshake.setProtocol( 113 );
+        packetClientHandshake.setGameEdition( (byte) 0 );
+        packetClientHandshake.setPayload( byteBuffer.array() );
+        this.sendToServer( packetClientHandshake );
     }
 
     /**
@@ -446,13 +439,17 @@ public class ProxiedConnection {
      * @return The actual packet ID extracted from the given buffer
      */
     private byte extractRealPacketID( PacketBuffer buffer ) {
-        byte packetId = buffer.readByte();
-        if ( packetId == (byte) 0xFE ) {
-            return buffer.readByte();
-        }
-        return packetId;
+        return buffer.readByte();
     }
 
+    private void writeVarInt( int value, ByteArrayOutputStream stream ) {
+        while ( ( value & -128 ) != 0 ) {
+            stream.write( value & 127 | 128 );
+            value >>>= 7;
+        }
+
+        stream.write( value );
+    }
 
     private byte[] batchPackets( Queue<Packet> queue, String direction ) {
         // Assemble uncompressed contents:
@@ -460,20 +457,19 @@ public class ProxiedConnection {
 
         while ( !queue.isEmpty() ) {
             Packet packet = queue.poll();
-            logger.info( "Batching packet " + packet.getId() + " to be send to: " + direction );
 
             this.intermediatePacketBuffer.setPosition( 0 );
             this.intermediatePacketBuffer.writeByte( packet.getId() );
             packet.serialize( this.intermediatePacketBuffer );
+
+            writeVarInt( this.intermediatePacketBuffer.getPosition(), bout );
             bout.write( this.intermediatePacketBuffer.getBuffer(), 0, this.intermediatePacketBuffer.getPosition() );
         }
 
         byte[] uncompressed = bout.toByteArray();
-        logger.info( "Uncompressed size: " + uncompressed.length );
 
         // Compress:
         this.intermediatePacketBuffer.setPosition( 0 );
-        this.intermediatePacketBuffer.writeInt( uncompressed.length );
 
         bout.reset();
         this.cachedDeflater.reset();
@@ -482,6 +478,7 @@ public class ProxiedConnection {
             int compressed = this.cachedDeflater.deflate( this.intermediateBuffer );
             bout.write( this.intermediateBuffer, 0, compressed );
         }
+
         this.cachedDeflater.setInput( uncompressed );
         this.cachedDeflater.finish();
         while ( !this.cachedDeflater.finished() ) {
@@ -491,10 +488,15 @@ public class ProxiedConnection {
 
         byte[] compressed = bout.toByteArray();
 
+        if ( this.encryptionHandler.isEncryptionToServerEnabled() && direction.equals( "Server" ) ) {
+            compressed = this.encryptionHandler.encryptInputForServer( compressed );
+        } else if ( this.encryptionHandler.isEncryptionToClientEnabled() && direction.equals( "Client" ) ) {
+            compressed = this.encryptionHandler.encryptInputForClient( compressed );
+        }
+
         // Now serialize the batch packet:
-        PacketBuffer buffer = new PacketBuffer( 5 + compressed.length );
-        buffer.writeByte( (byte) 0x06 );
-        buffer.writeInt( compressed.length );
+        PacketBuffer buffer = new PacketBuffer( 1 + compressed.length );
+        buffer.writeByte( (byte) 0xFE );
         buffer.writeBytes( compressed );
         return buffer.getBuffer();
     }
@@ -505,18 +507,22 @@ public class ProxiedConnection {
      * @param buffer The buffer to read the batch packet from
      * @return All packets found inside the given batch packet
      */
-    private Collection<Packet> extractBatchPacket( PacketBuffer buffer ) {
-        int payloadLength = buffer.readInt();
-        if ( buffer.getRemaining() < payloadLength ) {
-            this.logger.warn( "Received invalid batch packet - missing some payload" );
-            return new ArrayList<>( 0 );
+    private Collection<Packet> extractBatchPacket( PacketBuffer buffer, boolean fromClient ) {
+        byte[] input = new byte[buffer.getRemaining()];
+        System.arraycopy( buffer.getBuffer(), buffer.getPosition(), input, 0, input.length );
+
+        // If encryption is enabled we need to handle it first
+        if ( this.encryptionHandler.isEncryptionFromClientEnabled() && fromClient ) {
+            input = this.encryptionHandler.decryptInputFromClient( input );
+        } else if ( this.encryptionHandler.isEncryptionFromServerEnabled() && !fromClient ) {
+            input = this.encryptionHandler.decryptInputFromServer( input );
         }
 
         ByteArrayOutputStream bout = new ByteArrayOutputStream();
 
         try {
             this.cachedInflater.reset();
-            this.cachedInflater.setInput( buffer.getBuffer(), buffer.getPosition(), payloadLength );
+            this.cachedInflater.setInput( input );
             while ( !this.cachedInflater.finished() ) {
                 int decompressed = this.cachedInflater.inflate( this.intermediateBuffer );
                 bout.write( this.intermediateBuffer, 0, decompressed );
@@ -528,22 +534,44 @@ public class ProxiedConnection {
 
         List<Packet> packets = new ArrayList<>();
         PacketBuffer payload = new PacketBuffer( bout.toByteArray(), 0 );
-        int packetLength = payload.readInt();
-        while ( payload.getRemaining() > 0 ) {
-            int previousPosition = payload.getPosition();
 
-            byte packetID = this.extractRealPacketID( payload );
+        while ( payload.getRemaining() > 0 ) {
+            int packetLength = payload.readUnsignedVarInt();
+
+            byte[] pyLoad = new byte[packetLength];
+            payload.readBytes( pyLoad );
+
+            PacketBuffer buffer1 = new PacketBuffer( pyLoad, 0 );
+
+            byte packetID = this.extractRealPacketID( buffer1 );
             Packet packet = PacketRegistry.createFromID( packetID );
             if ( packet == null ) {
-                this.logger.warn( "Received unknown packet batched into packet batch (ID: " + packetID + ")" );
-                payload.skip( packetLength - ( payload.getPosition() - previousPosition ) );
+                byte[] packetPayload = new byte[buffer1.getRemaining()];
+                buffer1.readBytes( packetPayload );
+
+                // this.logger.warn( ( fromClient ? ">>" : "<<" ) + " Received unknown packet batched into packet batch (ID: " + Integer.toHexString( packetID & 0xFF ) + "): " + Util.toHexString( packetPayload ) );
+
+                // Add dummy packet
+                packets.add( new Packet( packetID ) {
+                    @Override
+                    public void serialize( PacketBuffer buffer ) {
+                        buffer.writeBytes( packetPayload );
+                    }
+
+                    @Override
+                    public void deserialize( PacketBuffer buffer ) {
+
+                    }
+                } );
+
                 continue;
             }
-            packet.deserialize( payload );
+
+            packet.deserialize( buffer1 );
             packets.add( packet );
         }
 
-        buffer.skip( payloadLength );
+        buffer.skip( buffer.getRemaining() );
 
         return packets;
     }

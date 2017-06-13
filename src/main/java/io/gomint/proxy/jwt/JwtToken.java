@@ -51,7 +51,7 @@ public class JwtToken {
 	}
 	
 	private JwtHeader           header;
-	private Map<String, Object> claims;
+	private JSONObject claims;
 	
 	/*
 	 * We are caching the signature bytes for the following reason:
@@ -75,6 +75,10 @@ public class JwtToken {
 	 */
 	public JwtHeader getHeader() {
 		return this.header;
+	}
+
+	public JSONObject getClaims() {
+		return this.claims;
 	}
 	
 	/**

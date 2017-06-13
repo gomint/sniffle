@@ -28,7 +28,13 @@
         <dependency>
             <groupId>io.gomint</groupId>
             <artifactId>jraknet</artifactId>
-            <version>3.2.7-0.15.4-SNAPSHOT</version>
+            <version>4.0.1-SNAPSHOT</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.16.14</version>
         </dependency>
 
         <!-- Logging -->
