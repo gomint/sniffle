@@ -12,7 +12,6 @@ import lombok.Data;
 public class PacketClientHandshake extends Packet {
 
 	private int protocol;
-	private byte gameEdition;
 	private byte[] payload;
 	
 	public PacketClientHandshake() {
@@ -22,7 +21,6 @@ public class PacketClientHandshake extends Packet {
 	@Override
 	public void serialize( PacketBuffer buffer ) {
 		buffer.writeInt( this.protocol );
-		buffer.writeByte( this.gameEdition );
 
 		buffer.writeUnsignedVarInt( this.payload.length );
 		buffer.writeBytes( this.payload );
@@ -31,7 +29,6 @@ public class PacketClientHandshake extends Packet {
 	@Override
 	public void deserialize( PacketBuffer buffer ) {
 		this.protocol = buffer.readInt();
-		this.gameEdition = buffer.readByte();
 
 		this.payload = new byte[buffer.readUnsignedVarInt()];
 		buffer.readBytes( this.payload );

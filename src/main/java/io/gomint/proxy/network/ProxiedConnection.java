@@ -2,10 +2,7 @@ package io.gomint.proxy.network;
 
 import io.gomint.jraknet.*;
 import io.gomint.proxy.Util;
-import io.gomint.proxy.jwt.JwtAlgorithm;
-import io.gomint.proxy.jwt.JwtSignatureException;
-import io.gomint.proxy.jwt.JwtToken;
-import io.gomint.proxy.jwt.MojangLoginForger;
+import io.gomint.proxy.jwt.*;
 import io.gomint.proxy.network.packet.Packet;
 import io.gomint.proxy.network.packet.PacketClientHandshake;
 import io.gomint.proxy.network.packet.PacketEncryptionReady;
@@ -19,6 +16,7 @@ import java.net.InetSocketAddress;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.security.Key;
 import java.util.*;
 import java.util.zip.DataFormatException;
 import java.util.zip.Deflater;
@@ -30,7 +28,7 @@ import java.util.zip.Inflater;
  */
 public class ProxiedConnection {
 
-    private final Logger logger = LoggerFactory.getLogger( ProxiedConnection.class );
+    private static final Logger LOGGER = LoggerFactory.getLogger( ProxiedConnection.class );
 
     // Client:
     private final Connection clientConnection;
@@ -150,7 +148,7 @@ public class ProxiedConnection {
                     this.handleClientboundPacket( packet );
                 }
             } else {
-                // logger.info( "Received packet with ID " + Integer.toHexString( packetID & 0xFF ) + " from server - Encrypted: " + this.encryptionHandler.isEncryptionFromServerEnabled() );
+                LOGGER.info( "Received packet with ID " + Integer.toHexString( packetID & 0xFF ) + " from server - Encrypted: " + this.encryptionHandler.isEncryptionFromServerEnabled() );
                 Packet packet = PacketRegistry.createFromID( packetID );
                 if ( packet != null ) {
                     packet.deserialize( raw );
@@ -198,21 +196,20 @@ public class ProxiedConnection {
 
         while ( raw.getRemaining() > 0 ) {
             byte packetID = this.extractRealPacketID( raw );
-            // logger.info( "Received packet with ID " + Integer.toHexString( packetID & 0xFF ) + " from client - Encrypted: " + this.encryptionHandler.isEncryptionFromClientEnabled() );
-
             if ( packetID == PacketRegistry.PACKET_BATCH ) {
                 for ( Packet packet : this.extractBatchPacket( raw, true ) ) {
                     // logger.info( "Received packet with ID " + Integer.toHexString( packet.getId() & 0xFF ) + " from client - Batched" );
                     this.handleServerboundPacket( packet );
                 }
             } else {
+                LOGGER.debug( "Received packet with ID " + Integer.toHexString( packetID & 0xFF ) + " from client - Encrypted: " + this.encryptionHandler.isEncryptionFromClientEnabled() );
                 Packet packet = PacketRegistry.createFromID( packetID );
                 if ( packet != null ) {
                     packet.deserialize( raw );
                     this.handleServerboundPacket( packet );
                 } else {
                     // Unknown packet -> direct passthrough:
-                    System.out.println( "Unknown packet with ID " + packetID );
+                    LOGGER.info( "Unknown packet with ID " + packetID );
 
                     byte[] data = new byte[raw.getRemaining()];
                     raw.readBytes( data );
@@ -254,7 +251,7 @@ public class ProxiedConnection {
         try {
             this.proxySocket.initialize();
         } catch ( SocketException e ) {
-            this.logger.error( "Failed to establish connection to backend server: " + address.toString(), e );
+            LOGGER.error( "Failed to establish connection to backend server: " + address.toString(), e );
 
             // Disconnect client -> will cause connection manager to remove this proxied connection from its maps:
             this.clientConnection.disconnect( "Failed to connect to backend server" );
@@ -281,7 +278,7 @@ public class ProxiedConnection {
      * @param reason The disconnect reason to be sent to the client (not the proxied server)
      */
     public void disconnect( String reason ) {
-        logger.warn( "Disconnecting client: " + reason );
+        LOGGER.warn( "Disconnecting client: " + reason );
 
         if ( this.clientConnection.isConnected() ) {
             this.clientConnection.disconnect( reason );
@@ -350,6 +347,8 @@ public class ProxiedConnection {
      * @param packet The handshake packet that was received
      */
     private void handleClientHandshake( PacketClientHandshake packet ) {
+        LOGGER.info( "Client protocol version: " + packet.getProtocol() );
+
         // More data please
         ByteBuffer byteBuffer = ByteBuffer.wrap( packet.getPayload() );
         byteBuffer.order( ByteOrder.LITTLE_ENDIAN );
@@ -373,11 +372,25 @@ public class ProxiedConnection {
                 e.printStackTrace();
             }
 
+            EncryptionRequestForger forger = new EncryptionRequestForger();
+            String jwt = forger.forge( this.encryptionHandler.getProxyPublic(), this.encryptionHandler.getProxyPrivate(), this.encryptionHandler.getClientSalt() );
+
+            JwtToken token = JwtToken.parse( jwt );
+            String keyDataBase64 = (String) token.getHeader().getProperty( "x5u" );
+            Key key = MojangChainValidator.createPublicKey( keyDataBase64 );
+
+            try {
+                if ( token.validateSignature( key ) ) {
+                    LOGGER.debug( "For client: Valid encryption start JWT" );
+                }
+            } catch ( JwtSignatureException e ) {
+                e.printStackTrace();
+            }
+
             PacketServerHandshake handshake = new PacketServerHandshake();
-            handshake.setPublicKeyBase64( Base64.getEncoder()
-                    .encodeToString( EncryptionHandler.PROXY_KEY_PAIR.getPublic()
-                            .getEncoded() ) );
-            handshake.setSha256Salt( this.encryptionHandler.getClientSalt() );
+            handshake.setJwtData( jwt );
+
+            LOGGER.debug( "Sending proxy encryption handshake JWT: " + jwt );
             this.sendToClient( handshake );
             this.connectToBackendServer( this.connectionManager.getProxy().getFallbackServer() );
         } else {
@@ -391,8 +404,22 @@ public class ProxiedConnection {
      * @param packet The handshake we received from the proxied server
      */
     private void handleServerHandshake( PacketServerHandshake packet ) {
-        this.encryptionHandler.setServerPublicKey( packet.getPublicKeyBase64() );
-        this.encryptionHandler.beginServersideEncryption( packet.getSha256Salt() );
+        // We need to verify the JWT request
+        JwtToken token = JwtToken.parse( packet.getJwtData() );
+        String keyDataBase64 = (String) token.getHeader().getProperty( "x5u" );
+        Key key = MojangChainValidator.createPublicKey( keyDataBase64 );
+
+        try {
+            if ( token.validateSignature( key ) ) {
+                LOGGER.debug( "For server: Valid encryption start JWT" );
+            }
+        } catch ( JwtSignatureException e ) {
+            e.printStackTrace();
+        }
+
+        LOGGER.debug( "Encryption JWT public: " + keyDataBase64 );
+        this.encryptionHandler.setServerPublicKey( keyDataBase64 );
+        this.encryptionHandler.beginServersideEncryption( Base64.getDecoder().decode( (String) token.getClaim( "salt" ) ) );
 
         // Tell the server that we are ready to receive encrypted packets from now on:
         PacketEncryptionReady response = new PacketEncryptionReady();
@@ -425,8 +452,7 @@ public class ProxiedConnection {
         byteBuffer.put( skin.getBytes() );
 
         PacketClientHandshake packetClientHandshake = new PacketClientHandshake();
-        packetClientHandshake.setProtocol( 113 );
-        packetClientHandshake.setGameEdition( (byte) 0 );
+        packetClientHandshake.setProtocol( 131 );
         packetClientHandshake.setPayload( byteBuffer.array() );
         this.sendToServer( packetClientHandshake );
     }
@@ -460,6 +486,7 @@ public class ProxiedConnection {
 
             this.intermediatePacketBuffer.setPosition( 0 );
             this.intermediatePacketBuffer.writeByte( packet.getId() );
+            this.intermediatePacketBuffer.writeShort( (short) 0 );
             packet.serialize( this.intermediatePacketBuffer );
 
             writeVarInt( this.intermediatePacketBuffer.getPosition(), bout );
@@ -528,7 +555,7 @@ public class ProxiedConnection {
                 bout.write( this.intermediateBuffer, 0, decompressed );
             }
         } catch ( DataFormatException e ) {
-            this.logger.warn( "Received invalid batch packet - could not decompress", e );
+            LOGGER.warn( "Received invalid batch packet - could not decompress", e );
             return new ArrayList<>( 0 );
         }
 
@@ -544,6 +571,7 @@ public class ProxiedConnection {
             PacketBuffer buffer1 = new PacketBuffer( pyLoad, 0 );
 
             byte packetID = this.extractRealPacketID( buffer1 );
+            buffer1.readShort();
             Packet packet = PacketRegistry.createFromID( packetID );
             if ( packet == null ) {
                 byte[] packetPayload = new byte[buffer1.getRemaining()];
@@ -588,7 +616,7 @@ public class ProxiedConnection {
                 case CONNECTION_ATTEMPT_SUCCEEDED:
                     ProxiedConnection.this.proxiedConnection = ProxiedConnection.this.proxySocket.getConnection();
                     ProxiedConnection.this.notifyProxiedConnectionAvailable();
-                    logger.info( "Connected to backend server" );
+                    LOGGER.info( "Connected to backend server" );
                     break;
 
                 case CONNECTION_CLOSED:

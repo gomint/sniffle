@@ -18,8 +18,7 @@ import lombok.Data;
 @Data
 public class PacketServerHandshake extends Packet {
 	
-	private String publicKeyBase64;
-	private byte[] sha256Salt;
+	private String jwtData;
 	
 	public PacketServerHandshake() {
 		super( PacketRegistry.PACKET_SERVER_HANDSHAKE );
@@ -27,16 +26,12 @@ public class PacketServerHandshake extends Packet {
 	
 	@Override
 	public void serialize( PacketBuffer buffer ) {
-		buffer.writeString( this.publicKeyBase64 );
-		buffer.writeUnsignedVarInt( this.sha256Salt.length );
-		buffer.writeBytes( this.sha256Salt );
+		buffer.writeString( this.jwtData );
 	}
 	
 	@Override
 	public void deserialize( PacketBuffer buffer ) {
-		this.publicKeyBase64 = buffer.readString();
-		this.sha256Salt = new byte[buffer.readUnsignedVarInt()];
-		buffer.readBytes( this.sha256Salt );
+		this.jwtData = buffer.readString();
 	}
 	
 }

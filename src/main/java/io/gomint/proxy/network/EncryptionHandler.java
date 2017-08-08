@@ -38,6 +38,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class EncryptionHandler {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger( EncryptionHandler.class );
     private static KeyFactory ECDH_KEY_FACTORY;
     public static KeyPair PROXY_KEY_PAIR;
 
@@ -96,8 +97,6 @@ public class EncryptionHandler {
             e.printStackTrace();
         }
     }
-
-    private final Logger logger = LoggerFactory.getLogger( EncryptionHandler.class );
 
     // Client Side:
     private boolean xboxLiveLogin;
@@ -266,8 +265,8 @@ public class EncryptionHandler {
             e.printStackTrace();
         }
 
-        this.logger.info( "Client provided JWT Chain: [authenticated=" + this.xboxLiveLogin + ", username=" + this.clientUsername + ", uuid=" + this.clientUUID + ", xuid=" + this.xboxUID + "]" );
-        this.logger.debug( "Client public key: " + Base64.getEncoder().encodeToString( this.clientPublicKey.getEncoded() ) );
+        LOGGER.info( "Client provided JWT Chain: [authenticated=" + this.xboxLiveLogin + ", username=" + this.clientUsername + ", uuid=" + this.clientUUID + ", xuid=" + this.xboxUID + "]" );
+        LOGGER.debug( "Client public key: " + Base64.getEncoder().encodeToString( this.clientPublicKey.getEncoded() ) );
     }
 
     /**
@@ -291,6 +290,8 @@ public class EncryptionHandler {
             // Already initialized:
             return true;
         }
+
+        System.out.println( "Size of salt: " + salt.length );
 
         // Generate shared secret from ECDH keys:
         byte[] secret = this.generateECDHSecret( PROXY_KEY_PAIR.getPrivate(), this.serverPublicKey );
@@ -371,7 +372,6 @@ public class EncryptionHandler {
         }
 
         byte[] outputChunked = new byte[input.length - 8];
-
         System.arraycopy( output, 0, outputChunked, 0, outputChunked.length );
 
         byte[] hashBytes = calcHash( outputChunked, this.clientKey, this.clientReceiveCounter );
@@ -434,7 +434,7 @@ public class EncryptionHandler {
                 throw new InvalidCipherTextException( "Output size did not match cursor" );
             }
         } catch ( InvalidCipherTextException e ) {
-            // LOGGER.error( "Could not encrypt/decrypt to/from cipher-text", e );
+            LOGGER.error( "Could not encrypt/decrypt to/from cipher-text", e );
             return null;
         }
 
@@ -465,13 +465,6 @@ public class EncryptionHandler {
             // LOGGER.error( "Failed to generate Elliptic-Curve-Diffie-Hellman Shared Secret for clientside encryption", e );
             return null;
         }
-    }
-
-    private byte[] concatenateByteArrays( byte[] a, byte[] b ) {
-        byte[] result = new byte[a.length + b.length];
-        System.arraycopy( a, 0, result, 0, a.length );
-        System.arraycopy( b, 0, result, a.length, b.length );
-        return result;
     }
 
     private byte[] takeBytesFromArray( byte[] buffer, int offset, int length ) {
@@ -519,4 +512,11 @@ public class EncryptionHandler {
         return this.trustedKeys;
     }
 
+    public String getProxyPublic() {
+        return Base64.getEncoder().encodeToString( PROXY_KEY_PAIR.getPublic().getEncoded() );
+    }
+
+    public Key getProxyPrivate() {
+        return PROXY_KEY_PAIR.getPrivate();
+    }
 }

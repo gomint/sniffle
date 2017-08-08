@@ -7,6 +7,9 @@
 
 package io.gomint.proxy.jwt;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
@@ -22,6 +25,7 @@ import java.util.*;
  */
 public class MojangChainValidator {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger( MojangChainValidator.class );
     private static final String MOJANG_TRUSTED_PUBLIC_KEY_BASE64 = "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE8ELkixyLcwlZryUQcu1TvPOmI2B7vX83ndnWRUaXm74wFfa5f/lwQNTfrLVHa2PmenpGI6JhIMUJaWZrjmMj90NoKNFSNBuKdm8rYiXsfaz3K36x/1U26HpG0ZxK/V1V";
     private static final PublicKey MOJANG_TRUSTED_PUBLIC_KEY;
     private static final KeyFactory ECDH_KEY_FACTORY;
@@ -48,7 +52,7 @@ public class MojangChainValidator {
         }
     }
 
-    private static PublicKey createPublicKey( String base64 ) {
+    public static PublicKey createPublicKey( String base64 ) {
         try {
             return ECDH_KEY_FACTORY.generatePublic( new X509EncodedKeySpec( Base64.getDecoder().decode( base64 ) ) );
         } catch ( InvalidKeySpecException e ) {
@@ -161,6 +165,10 @@ public class MojangChainValidator {
                     this.clientPublicKey = (ECPublicKey) key;
                     this.loadClientInformation( extraData, false );
                 }
+            }
+
+            for ( String s : this.trustedKeys.keySet() ) {
+                LOGGER.info( "Provided trusted key: " + s );
             }
 
             return true;
