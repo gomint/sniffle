@@ -7,10 +7,12 @@
 
 package io.gomint.proxy;
 
+import io.gomint.proxy.network.EncryptionHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.SocketException;
+import java.security.Security;
 
 /**
  * @author BlackyPaw
@@ -22,6 +24,7 @@ public class Main {
 
 	private static String ip;
 	private static int port = 19132;
+	private static String bindAddress = "127.0.0.1";
 	private static int listenPort = 19132;
 
 	/**
@@ -34,9 +37,14 @@ public class Main {
 			return;
 		}
 
+		Security.addProvider( new org.bouncycastle.jce.provider.BouncyCastleProvider() );
+		
+		// Generate proxy keypair:
+		EncryptionHandler.generateEncryptionKeys();
+		
 		Proxy proxy = new Proxy( ip, port );
 		try {
-			proxy.bind( "0.0.0.0", listenPort );
+			proxy.bind( bindAddress, listenPort );
 		} catch (SocketException e) {
 			e.printStackTrace();
 			return;
@@ -89,6 +97,14 @@ public class Main {
 					}
 				} else {
 					logger.error( "Malformed '--lport' command line option: Please specify actual IP value" );
+					return false;
+				}
+			} else if ( args[i].startsWith( "--bind" ) ) {
+				String[] split = args[i].split( "=" );
+				if ( split.length == 2 ) {
+					bindAddress = split[1];
+				} else {
+					logger.error( "Malformed '--bind' command line option: Please specify actual address to bind to" );
 					return false;
 				}
 			} else {
