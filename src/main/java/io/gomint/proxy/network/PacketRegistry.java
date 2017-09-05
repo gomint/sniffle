@@ -13,7 +13,9 @@ public class PacketRegistry {
     public static final byte PACKET_ENCRYPTION_READY = 0x04;
     public static final byte PACKET_START_GAME = (byte) 0x0b;
     public static final byte PACKET_MOVE_ENTITY = 0x12;
+    public static final byte PACKET_ENTITY_METADATA = 0x27;
     public static final byte PACKET_CHUNK_DATA = 0x3a;
+    public static final byte PACKET_ADVENTURE_SETTINGS = 0x37;
     public static final byte PACKET_AVAILABLE_COMMANDS = 0x4e;
     public static final byte PACKET_COMMAND_STEP = 0x4f;
     public static final byte PACKET_BATCH = (byte) 0xfe;
@@ -35,10 +37,14 @@ public class PacketRegistry {
                 return new PacketEncryptionReady();
             case PACKET_START_GAME:
                 return new PacketStartGame();
+            case PACKET_ENTITY_METADATA:
+                return new PacketEntityMetadata();
             case PACKET_MOVE_ENTITY:
                 return new PacketPassthrough( PACKET_MOVE_ENTITY );
             case PACKET_CHUNK_DATA:
                 return new PacketPassthrough( PACKET_CHUNK_DATA );
+            case PACKET_ADVENTURE_SETTINGS:
+                return new PacketAdventureSettings();
             case PACKET_AVAILABLE_COMMANDS:
                 return new PacketAvailableCommands();
             case PACKET_COMMAND_STEP:

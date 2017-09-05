@@ -452,7 +452,7 @@ public class ProxiedConnection {
         byteBuffer.put( skin.getBytes() );
 
         PacketClientHandshake packetClientHandshake = new PacketClientHandshake();
-        packetClientHandshake.setProtocol( 131 );
+        packetClientHandshake.setProtocol( 135 );
         packetClientHandshake.setPayload( byteBuffer.array() );
         this.sendToServer( packetClientHandshake );
     }

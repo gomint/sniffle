@@ -24,7 +24,7 @@ public class Main {
 
 	private static String ip;
 	private static int port = 19132;
-	private static String bindAddress = "127.0.0.1";
+	private static String bindAddress = "0.0.0.0";
 	private static int listenPort = 19132;
 
 	/**

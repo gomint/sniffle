@@ -9,7 +9,16 @@ package io.gomint.proxy.network.packet;
 
 import io.gomint.jraknet.PacketBuffer;
 import io.gomint.proxy.Gamerule;
+import io.gomint.proxy.inventory.ItemStack;
+import io.gomint.proxy.inventory.Material;
+import io.gomint.proxy.inventory.MaterialMagicNumbers;
+import io.gomint.proxy.util.EnumConnectors;
+import io.gomint.taglib.NBTTagCompound;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.ByteOrder;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.BiConsumer;
@@ -129,6 +138,101 @@ public abstract class Packet {
 		}
 
 		return gamerules;
+	}
+
+	public static void writeItemStack( ItemStack itemStack, PacketBuffer buffer ) {
+		if ( itemStack == null || itemStack.getMaterial() == Material.AIR ) {
+			buffer.writeSignedVarInt( 0 );
+			return;
+		}
+
+		buffer.writeSignedVarInt( EnumConnectors.MATERIAL_CONNECTOR.convert( itemStack.getMaterial() ).getOldId() );
+		buffer.writeSignedVarInt( ( itemStack.getData() << 8 ) + ( itemStack.getAmount() & 0xff ) );
+
+		NBTTagCompound compound = itemStack.getNbtData();
+		if ( compound == null ) {
+			buffer.writeLShort( (short) 0 );
+		} else {
+			try {
+				ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+				compound.writeTo( byteArrayOutputStream, false, ByteOrder.LITTLE_ENDIAN );
+				buffer.writeLShort( (short) byteArrayOutputStream.size() );
+				buffer.writeBytes( byteArrayOutputStream.toByteArray() );
+			} catch ( IOException e ) {
+				e.printStackTrace();
+				buffer.writeLShort( (short) 0 );
+			}
+		}
+
+		// canPlace and canBreak
+		buffer.writeSignedVarInt( 0 );
+		buffer.writeSignedVarInt( 0 );
+	}
+
+	public static void writeItemStacks( ItemStack[] itemStacks, PacketBuffer buffer ) {
+		if ( itemStacks == null || itemStacks.length == 0 ) {
+			buffer.writeUnsignedVarInt( 0 );
+			return;
+		}
+
+		buffer.writeUnsignedVarInt( itemStacks.length );
+
+		for ( ItemStack itemStack : itemStacks ) {
+			writeItemStack( itemStack, buffer );
+		}
+	}
+
+	/**
+	 * Read in a variable amount of itemstacks
+	 *
+	 * @param buffer The buffer to read from
+	 * @return a list of itemstacks
+	 */
+	public static ItemStack[] readItemStacks( PacketBuffer buffer ) {
+		int count = buffer.readUnsignedVarInt();
+		ItemStack[] itemStacks = new ItemStack[count];
+
+		for ( int i = 0; i < count; i++ ) {
+			itemStacks[i] = readItemStack( buffer );
+		}
+
+		return itemStacks;
+	}
+	public static ItemStack readItemStack( PacketBuffer buffer ) {
+		int id = buffer.readSignedVarInt();
+		if ( id == 0 ) {
+			return new ItemStack( Material.AIR, (short) 0, 0, null );
+		}
+
+		int temp = buffer.readSignedVarInt();
+		byte amount = (byte) ( temp & 0xFF );
+		short data = (short) ( temp >> 8 );
+
+		NBTTagCompound nbt = null;
+		short extraLen = buffer.readLShort();
+		if ( extraLen > 0 ) {
+			ByteArrayInputStream bin = new ByteArrayInputStream( buffer.getBuffer(), buffer.getPosition(), extraLen );
+			try {
+				nbt = NBTTagCompound.readFrom( bin, false, ByteOrder.LITTLE_ENDIAN );
+			} catch ( IOException e ) {
+				e.printStackTrace();
+			}
+
+			buffer.skip( extraLen );
+		}
+
+		// They implemented additional data for item stacks aside from nbt
+		int countPlacedOn = buffer.readSignedVarInt();
+		for ( int i = 0; i < countPlacedOn; i++ ) {
+			buffer.readString();    // TODO: Implement proper support once we know the string values
+		}
+
+		int countCanBreak = buffer.readSignedVarInt();
+		for ( int i = 0; i < countCanBreak; i++ ) {
+			buffer.readString();    // TODO: Implement proper support once we know the string values
+		}
+
+		return new ItemStack( EnumConnectors.MATERIAL_CONNECTOR.revert( MaterialMagicNumbers.valueOfWithId( id ) ), data, amount, nbt );
 	}
 
 }
