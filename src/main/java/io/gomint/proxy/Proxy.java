@@ -39,6 +39,7 @@ public class Proxy {
 		
 		this.socketEventHandler = new ClientSocketEventHandler( this.connectionManager );
 		this.server = new ServerSocket( 1 );
+		this.server.setMojangModificationEnabled( true );
 	}
 	
 	// ======================================== GENERAL ======================================== //

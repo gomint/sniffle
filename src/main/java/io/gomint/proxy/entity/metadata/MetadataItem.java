@@ -56,7 +56,7 @@ public class MetadataItem extends MetadataValue {
 
     @Override
     void deserialize( PacketBuffer buffer ) {
-        this.value = new ItemStack( EnumConnectors.MATERIAL_CONNECTOR.revert( MaterialMagicNumbers.valueOfWithId( buffer.readLShort() ) ), buffer.readByte(), buffer.readLShort() );
+        this.value = new ItemStack( buffer.readLShort(), buffer.readByte(), buffer.readLShort() );
     }
 
     @Override

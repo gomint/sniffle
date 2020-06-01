@@ -37,7 +37,7 @@ public class PacketAdventureSettings extends Packet {
         this.customFlags = buffer.readUnsignedVarInt();
         this.entityId = buffer.readLLong();
 
-        System.out.println( this );
+        System.out.println( this ); // 367015600t
     }
 
 }

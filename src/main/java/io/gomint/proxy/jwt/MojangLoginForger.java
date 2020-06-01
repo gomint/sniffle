@@ -53,8 +53,6 @@ public class MojangLoginForger {
         header.put( "alg", algorithm.getJwtName() );
         header.put( "x5u", publicKeyBase64 );
 
-        System.out.println( publicKeyBase64 );
-
         long timestamp = System.currentTimeMillis();
 
         JSONObject claims = new JSONObject();
@@ -63,7 +61,6 @@ public class MojangLoginForger {
         claims.put( "iat", timestamp + 24 * 60 * 60 * 1000 );
         claims.put( "iss", "self" );
         claims.put( "certificateAuthority", true );
-        // claims.put( "randomNonce", ThreadLocalRandom.current().nextInt() );
 
         JSONObject extraData = new JSONObject();
         extraData.put( "displayName", this.username );

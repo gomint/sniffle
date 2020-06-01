@@ -7,11 +7,9 @@
 
 package io.gomint.proxy.network;
 
-import io.gomint.jraknet.ClientSocket;
 import io.gomint.jraknet.Socket;
 import io.gomint.jraknet.SocketEvent;
 import io.gomint.jraknet.SocketEventHandler;
-import io.gomint.proxy.network.ConnectionManager;
 
 /**
  * @author BlackyPaw
@@ -19,33 +17,33 @@ import io.gomint.proxy.network.ConnectionManager;
  */
 public class ClientSocketEventHandler implements SocketEventHandler {
 
-	private final ConnectionManager connectionManager;
+    private final ConnectionManager connectionManager;
 
-	public ClientSocketEventHandler( ConnectionManager connectionManager ) {
-		this.connectionManager = connectionManager;
-	}
+    public ClientSocketEventHandler( ConnectionManager connectionManager ) {
+        this.connectionManager = connectionManager;
+    }
 
-	@Override
-	public void onSocketEvent( Socket socket, SocketEvent event ) {
-		switch ( event.getType() ) {
-			case NEW_INCOMING_CONNECTION:
-				this.connectionManager.prepareIncomingConnection( event.getConnection() );
-				break;
+    @Override
+    public void onSocketEvent( Socket socket, SocketEvent event ) {
+        switch ( event.getType() ) {
+            case NEW_INCOMING_CONNECTION:
+                this.connectionManager.prepareIncomingConnection( event.getConnection() );
+                break;
 
-			case CONNECTION_CLOSED:
-			case CONNECTION_DISCONNECTED:
-				this.connectionManager.notifyClientDisconnected( event.getConnection() );
-				break;
+            case CONNECTION_CLOSED:
+            case CONNECTION_DISCONNECTED:
+                this.connectionManager.notifyClientDisconnected( event.getConnection() );
+                break;
 
-			case UNCONNECTED_PING:
-				this.handleUnconnectedPing( event );
-				break;
-		}
-	}
+            case UNCONNECTED_PING:
+                this.handleUnconnectedPing( event );
+                break;
+        }
+    }
 
-	private void handleUnconnectedPing( SocketEvent event ) {
-		// Fire ping event so plugins can modify the motd and player amounts
-		event.getPingPongInfo().setMotd( "MCPE;MITM Proxy;113;1.1.0.55;0;1" );
-	}
+    private void handleUnconnectedPing( SocketEvent event ) {
+        // Fire ping event so plugins can modify the motd and player amounts
+        event.getPingPongInfo().setMotd( "MCPE;MITM Proxy;313;1.8.0.14;0;1" );
+    }
 
 }

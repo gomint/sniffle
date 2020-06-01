@@ -37,10 +37,8 @@ public class PacketEntityMetadata extends Packet {
     @Override
     public void deserialize( PacketBuffer buffer ) {
         this.entityId = buffer.readUnsignedVarLong();
-        System.out.println( this.entityId );
         this.metadata = new MetadataContainer();
         this.metadata.deserialize( buffer );
-
-        System.out.println( this );
     }
+
 }

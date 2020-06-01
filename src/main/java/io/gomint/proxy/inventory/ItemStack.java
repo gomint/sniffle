@@ -8,6 +8,7 @@
 package io.gomint.proxy.inventory;
 
 import io.gomint.taglib.NBTTagCompound;
+import lombok.ToString;
 
 /**
  * Represents a stack of up to 255 items of the same type which may
@@ -16,33 +17,13 @@ import io.gomint.taglib.NBTTagCompound;
  * @author BlackyPaw
  * @version 1.0
  */
+@ToString
 public class ItemStack implements Cloneable {
 
-    private Material material;
+    private int material;
     private short data;
     private byte amount;
     private NBTTagCompound nbt;
-
-    /**
-     * Constructs a new item stack that will hold one item of the
-     * given type.
-     *
-     * @param material The material of the item
-     */
-    public ItemStack( Material material ) {
-        this( material, (short) 0, 1 );
-    }
-
-    /**
-     * Constructs a new item stack that will hold the given amount
-     * of items of the specified type.
-     *
-     * @param material The material of the item
-     * @param amount   The number of items on this stack (255 max)
-     */
-    public ItemStack( Material material, int amount ) {
-        this( material, (short) 0, amount );
-    }
 
     /**
      * Constructs a new item stack that will hold the given amount
@@ -53,7 +34,7 @@ public class ItemStack implements Cloneable {
      * @param data     The data value of the item
      * @param amount   The number of items on this stack (255 max)
      */
-    public ItemStack( Material material, short data, int amount ) {
+    public ItemStack( int material, short data, int amount ) {
         this.material = material;
         this.data = data;
         this.amount = (byte) ( amount > Byte.MAX_VALUE ? Byte.MAX_VALUE : amount );
@@ -70,7 +51,7 @@ public class ItemStack implements Cloneable {
      * @param amount   The number of items on this stack (255 max)
      * @param nbt      The additional raw NBT data of the item
      */
-    public ItemStack( Material material, short data, int amount, NBTTagCompound nbt ) {
+    public ItemStack( int material, short data, int amount, NBTTagCompound nbt ) {
         this( material, data, amount );
         this.nbt = nbt;
     }
@@ -80,17 +61,8 @@ public class ItemStack implements Cloneable {
      *
      * @return The material of the item(s) on this stack
      */
-    public Material getMaterial() {
+    public int getMaterial() {
         return this.material;
-    }
-
-    /**
-     * Sets the material of the items on this stack.
-     *
-     * @param material The material of the items on this stack
-     */
-    public void setMaterial( Material material ) {
-        this.material = material;
     }
 
     /**
@@ -112,30 +84,12 @@ public class ItemStack implements Cloneable {
     }
 
     /**
-     * Get the maximum amount of items which can be stored in this stack
-     *
-     * @return maximum amount of items which can be stored in this stack
-     */
-    public byte getMaximumAmount() {
-        return this.material.getMaximumAmount();
-    }
-
-    /**
      * Gets the number of items on this stack.
      *
      * @return The number of items on this stack
      */
     public byte getAmount() {
         return this.amount;
-    }
-
-    /**
-     * Sets the number of items on this stack (255 max).
-     *
-     * @param amount The number of items on this stack
-     */
-    public void setAmount( int amount ) {
-        this.amount = amount > getMaximumAmount() ? getMaximumAmount() : (byte) amount;
     }
 
     /**
@@ -154,34 +108,6 @@ public class ItemStack implements Cloneable {
      */
     public void setNbtData( NBTTagCompound compound ) {
         this.nbt = compound;
-    }
-
-    @Override
-    public int hashCode() {
-        int hash = 157;
-        hash = 31 * hash + this.material.hashCode();
-        hash = 31 * hash + this.data;
-        hash = 31 * hash + this.amount;
-        return hash;
-    }
-
-    @Override
-    public String toString() {
-        return String.format( "[ItemStack %s:%d x %d]", this.material.toString(), this.data, this.amount );
-    }
-
-    @Override
-    public ItemStack clone() {
-        try {
-            ItemStack clone = (ItemStack) super.clone();
-            clone.material = this.material;
-            clone.data = this.data;
-            clone.amount = this.amount;
-            clone.nbt = ( this.nbt == null ? null : this.nbt.deepClone() );
-            return clone;
-        } catch ( CloneNotSupportedException e ) {
-            throw new AssertionError( "Clone of ItemStack failed", e );
-        }
     }
 
     @Override
