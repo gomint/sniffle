@@ -5,7 +5,6 @@ import io.gomint.proxy.Util;
 import io.gomint.proxy.jwt.*;
 import io.gomint.proxy.network.packet.Packet;
 import io.gomint.proxy.network.packet.PacketClientHandshake;
-import io.gomint.proxy.network.packet.PacketEncryptionReady;
 import io.gomint.proxy.network.packet.PacketServerHandshake;
 import org.json.simple.JSONObject;
 import org.slf4j.Logger;
@@ -325,9 +324,9 @@ public class ProxiedConnection {
             case PacketRegistry.PACKET_CLIENT_HANDSHAKE:
                 this.handleClientHandshake( (PacketClientHandshake) packet );
                 break;
-            case PacketRegistry.PACKET_ENCRYPTION_READY:
-                this.encryptionHandler.setEncryptionToClientEnabled( true );
-                break;
+//            case PacketRegistry.PACKET_ENCRYPTION_READY:
+//                this.encryptionHandler.setEncryptionToClientEnabled( true );
+//                break;
             default:
                 this.serverPacketQueue.add( packet );
                 break;
@@ -415,8 +414,8 @@ public class ProxiedConnection {
         this.encryptionHandler.beginServersideEncryption( Base64.getDecoder().decode( (String) token.getClaim( "salt" ) ) );
 
         // Tell the server that we are ready to receive encrypted packets from now on:
-        PacketEncryptionReady response = new PacketEncryptionReady();
-        this.sendToServer( response );
+//        PacketEncryptionReady response = new PacketEncryptionReady();
+//        this.sendToServer( response );
     }
 
     /**

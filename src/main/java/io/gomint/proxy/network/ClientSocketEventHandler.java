@@ -43,7 +43,7 @@ public class ClientSocketEventHandler implements SocketEventHandler {
 
     private void handleUnconnectedPing( SocketEvent event ) {
         // Fire ping event so plugins can modify the motd and player amounts
-        event.getPingPongInfo().setMotd( "MCPE;MITM Proxy;313;1.8.0.14;0;1" );
+        event.getPingPongInfo().setMotd( "MCPE;MITM Proxy;390;1.14.60;0;1" );
     }
 
 }
