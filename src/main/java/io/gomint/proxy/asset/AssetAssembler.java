@@ -42,12 +42,22 @@ public class AssetAssembler {
         }
     }
 
-    public static void addRecipe( UUID uuid, byte type, ItemStack[] in, ItemStack[] out, int width, int height ) {
+    public static void addRecipe( String name, UUID uuid, byte type, ItemStack[] in, ItemStack[] out, int width, int height, String block, int prio ) {
         NBTTagCompound compound = readFromFile();
 
         List<Object> recipes = compound.getList( "recipes", true );
 
         NBTTagCompound recipeCompound = new NBTTagCompound( "" );
+
+        if (name != null) {
+            recipeCompound.addValue("name", name);
+        }
+
+        if (block != null) {
+            recipeCompound.addValue("block", block);
+        }
+
+        recipeCompound.addValue("prio", prio);
         recipeCompound.addValue( "type", type );
 
         List<byte[]> input = new ArrayList<>();
@@ -91,19 +101,28 @@ public class AssetAssembler {
         writeToFile( compound );
     }
 
-    public static void writeBlockPalette( List<StringShortPair> blockPalette ) {
+    public static void writeLegacyItems(List<StringShortPair> itemLegacyIds) {
+        NBTTagCompound compound = readFromFile();
+
+        List<Object> nbtTags = compound.getList( "itemLegacyIDs", true );
+        nbtTags.clear();
+
+        for (StringShortPair itemLegacyId : itemLegacyIds) {
+            NBTTagCompound l = new NBTTagCompound("");
+            l.addValue("name", itemLegacyId.getBlockId());
+            l.addValue("id", itemLegacyId.getData());
+            nbtTags.add(l);
+        }
+
+        writeToFile( compound );
+    }
+
+    public static void writeBlockPalette( List<Object> blockPalette ) {
         NBTTagCompound compound = readFromFile();
 
         List<Object> nbtTags = compound.getList( "blockPalette", true );
         nbtTags.clear();
-
-        for ( StringShortPair pair : blockPalette ) {
-            NBTTagCompound blockCompound = new NBTTagCompound( "" );
-            blockCompound.addValue( "id", pair.getBlockId() );
-            blockCompound.addValue( "data", pair.getData() );
-            nbtTags.add( blockCompound );
-        }
-
+        nbtTags.addAll( blockPalette );
         writeToFile( compound );
     }
 
@@ -143,5 +162,4 @@ public class AssetAssembler {
             writeToFile(compound);
         }
     }
-
 }

@@ -12,8 +12,10 @@ import io.gomint.proxy.Gamerule;
 import io.gomint.proxy.inventory.ItemStack;
 import io.gomint.proxy.math.BlockPosition;
 import io.gomint.proxy.math.Vector;
+import io.gomint.proxy.util.DumpUtil;
 import io.gomint.taglib.AllocationLimitReachedException;
 import io.gomint.taglib.NBTReader;
+import io.gomint.taglib.NBTReaderNoBuffer;
 import io.gomint.taglib.NBTTagCompound;
 
 import java.io.ByteArrayInputStream;
@@ -198,6 +200,21 @@ public abstract class Packet {
         return itemStacks;
     }
 
+    public static ItemStack readRecipeIngredient(PacketBuffer buffer) {
+        int id = buffer.readSignedVarInt();
+        if (id == 0) {
+            return new ItemStack(0, (short) 0, 0, null);
+        }
+
+        int meta = buffer.readSignedVarInt();
+        if (meta == 0x7fff) {
+            meta = -1;
+        }
+
+        int count = buffer.readSignedVarInt();
+        return new ItemStack(id, (short) meta, count, null);
+    }
+
     public static ItemStack readItemStack(PacketBuffer buffer) {
         int id = buffer.readSignedVarInt();
         if (id == 0) {
@@ -210,25 +227,13 @@ public abstract class Packet {
 
         NBTTagCompound nbt = null;
         short extraLen = buffer.readLShort();
-        if (extraLen > 0) {
-            ByteArrayInputStream bin = new ByteArrayInputStream(buffer.getBuffer(), buffer.getPosition(), extraLen);
-            try {
-                NBTReader nbtReader = new NBTReader(bin, ByteOrder.LITTLE_ENDIAN);
-                nbtReader.setUseVarint(true);
-                // There is no alloc limit needed here, you can't write so much shit in 32kb, so thats ok
-                nbt = nbtReader.parse();
-            } catch (IOException | AllocationLimitReachedException e) {
-                return null;
-            }
-
-            buffer.skip(extraLen);
-        } else if (extraLen == -1) {
+        if (extraLen == -1) {
             // New system uses a byte as amount of nbt tags
             byte count = buffer.readByte();
             for (byte i = 0; i < count; i++) {
                 ByteArrayInputStream bin = new ByteArrayInputStream(buffer.getBuffer(), buffer.getPosition(), buffer.getRemaining());
                 try {
-                    NBTReader nbtReader = new NBTReader(bin, ByteOrder.LITTLE_ENDIAN);
+                    NBTReaderNoBuffer nbtReader = new NBTReaderNoBuffer(bin, ByteOrder.LITTLE_ENDIAN);
                     nbtReader.setUseVarint(true);
                     // There is no alloc limit needed here, you can't write so much shit in 32kb, so thats ok
                     nbt = nbtReader.parse();
@@ -236,25 +241,27 @@ public abstract class Packet {
                     return null;
                 }
 
-                buffer.skip(buffer.getRemaining() - bin.available());
+                buffer.setPosition(buffer.getBuffer().length - bin.available());
             }
-        }
-
-        if (buffer.getRemaining() <= 0) {
-            System.out.println("?");
-        } else {
-            System.out.println("???");
+        } else if (extraLen > 0) {
+            System.out.println("NBT LEN > 0");
         }
 
         // They implemented additional data for item stacks aside from nbt
         int countPlacedOn = buffer.readSignedVarInt();
         for (int i = 0; i < countPlacedOn; i++) {
-            buffer.readString();    // TODO: Implement proper support once we know the string values
+            String a = buffer.readString();    // TODO: Implement proper support once we know the string values
+            System.out.println(a);
         }
 
         int countCanBreak = buffer.readSignedVarInt();
         for (int i = 0; i < countCanBreak; i++) {
             buffer.readString();
+        }
+
+        // Special case shield?
+        if (id == 513) {
+            buffer.readSignedVarInt();
         }
 
         return new ItemStack(id, data, amount, nbt);

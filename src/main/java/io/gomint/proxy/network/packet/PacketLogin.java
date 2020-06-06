@@ -9,12 +9,12 @@ import lombok.Data;
  * @version 1.0
  */
 @Data
-public class PacketClientHandshake extends Packet {
+public class PacketLogin extends Packet {
 
 	private int protocol;
 	private byte[] payload;
 	
-	public PacketClientHandshake() {
+	public PacketLogin() {
 		super( PacketRegistry.PACKET_CLIENT_HANDSHAKE );
 	}
 	

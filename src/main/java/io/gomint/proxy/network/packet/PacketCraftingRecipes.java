@@ -52,16 +52,14 @@ public class PacketCraftingRecipes extends Packet {
                 case 5:
                 case 0:
                     // Shapeless
+                    String name = buffer.readString();
 
                     // Read input side
                     int inputCount = buffer.readUnsignedVarInt();
-                    if ( inputCount <= 0 ) {
-                        System.out.println( "??" );
-                    }
 
                     ItemStack[] input = new ItemStack[inputCount];
                     for ( int i1 = 0; i1 < inputCount; i1++ ) {
-                        input[i1] = Packet.readItemStack( buffer );
+                        input[i1] = Packet.readRecipeIngredient( buffer );
                     }
 
                     // Read output side
@@ -73,11 +71,14 @@ public class PacketCraftingRecipes extends Packet {
 
                     // Read uuid
                     UUID uuid = buffer.readUUID();
-                    AssetAssembler.addRecipe( uuid, (byte) recipeType, input, output, -1, -1 );
+                    String block = buffer.readString();
+                    int prio = buffer.readSignedVarInt();
+                    AssetAssembler.addRecipe( name, uuid, (byte) recipeType, input, output, -1, -1, block, prio );
                     break;
                 case 7:
                 case 1:
                     // Shaped
+                    name = buffer.readString();
 
                     // Read size of shape
                     int width = buffer.readSignedVarInt();
@@ -86,7 +87,7 @@ public class PacketCraftingRecipes extends Packet {
                     // Read input side
                     input = new ItemStack[width * height];
                     for ( int i1 = 0; i1 < input.length; i1++ ) {
-                        input[i1] = Packet.readItemStack( buffer );
+                        input[i1] = Packet.readRecipeIngredient( buffer );
                     }
 
                     // Read output side
@@ -98,7 +99,9 @@ public class PacketCraftingRecipes extends Packet {
 
                     // Read uuid
                     uuid = buffer.readUUID();
-                    AssetAssembler.addRecipe( uuid, (byte) recipeType, input, output, width, height );
+                    block = buffer.readString();
+                    prio = buffer.readSignedVarInt();
+                    AssetAssembler.addRecipe( name, uuid, (byte) recipeType, input, output, width, height, block, prio );
                     break;
 
                 case 3:
@@ -108,7 +111,9 @@ public class PacketCraftingRecipes extends Packet {
                     short data = (short) buffer.readSignedVarInt();
                     ItemStack result = Packet.readItemStack( buffer );
 
-                    AssetAssembler.addRecipe( null, (byte) 2, new ItemStack[]{ new ItemStack( id, data, 1 ) }, new ItemStack[]{ result }, -1, -1 );
+                    block = buffer.readString();
+
+                    AssetAssembler.addRecipe( null, null, (byte) 2, new ItemStack[]{ new ItemStack( id, data, 1 ) }, new ItemStack[]{ result }, -1, -1, block, 0 );
                     break;
 
                 case 2:
@@ -117,7 +122,9 @@ public class PacketCraftingRecipes extends Packet {
                     id = buffer.readSignedVarInt();
                     result = Packet.readItemStack( buffer );
 
-                    AssetAssembler.addRecipe( null, (byte) 2, new ItemStack[]{ new ItemStack( id, (short) 0, 1 ) }, new ItemStack[]{ result }, -1, -1 );
+                    block = buffer.readString();
+
+                    AssetAssembler.addRecipe( null, null, (byte) 2, new ItemStack[]{ new ItemStack( id, (short) 0, 1 ) }, new ItemStack[]{ result }, -1, -1, block, 0 );
                     break;
 
                 case 4:
@@ -128,6 +135,25 @@ public class PacketCraftingRecipes extends Packet {
                     System.out.println( "New recipe type: " + recipeType );
             }
         }
+
+        for(int i = 0, count1 = buffer.readUnsignedVarInt(); i < count1; ++i){
+            int input = buffer.readSignedVarInt();
+            int ingredient = buffer.readSignedVarInt();
+            int output = buffer.readSignedVarInt();
+
+            AssetAssembler.addRecipe( null, null, (byte) 101, new ItemStack[]{ new ItemStack( input, (short) 0, 1 ), new ItemStack( ingredient, (short) 0, 1) }, new ItemStack[]{ new ItemStack(output, (short)0, 1) }, -1, -1, null, 0 );
+        }
+
+        for(int i = 0, count1 = buffer.readUnsignedVarInt(); i < count1; ++i){
+            int input = buffer.readSignedVarInt();
+            int ingredient = buffer.readSignedVarInt();
+            int output = buffer.readSignedVarInt();
+
+            AssetAssembler.addRecipe( null, null, (byte) 102, new ItemStack[]{ new ItemStack( input, (short) 0, 1 ), new ItemStack( ingredient, (short) 0, 1) }, new ItemStack[]{ new ItemStack(output, (short)0, 1) }, -1, -1, null, 0 );
+        }
+
+        buffer.readBoolean();
+        System.out.println("Read all recipes");
     }
 
 }

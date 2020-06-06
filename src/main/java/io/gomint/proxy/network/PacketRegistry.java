@@ -8,9 +8,9 @@ import io.gomint.proxy.network.packet.*;
  */
 public class PacketRegistry {
 
-    public static final byte PACKET_CLIENT_HANDSHAKE = 0x04;
+    public static final byte PACKET_CLIENT_HANDSHAKE = 0x01;
     public static final byte PACKET_SERVER_HANDSHAKE = 0x03;
-    // public static final byte PACKET_ENCRYPTION_READY = 0x04;
+    public static final byte PACKET_ENCRYPTION_READY = 0x04;
     public static final byte PACKET_START_GAME = (byte) 0x0b;
     public static final byte PACKET_SPAWN_ENTITY = (byte) 0x0d;
     public static final byte PACKET_UPDATE_ATTRIBUTES = 0x1D;
@@ -33,19 +33,19 @@ public class PacketRegistry {
      */
     public static Packet createFromID( byte packetID ) {
         switch ( packetID ) {
+            case PACKET_CLIENT_HANDSHAKE:
+                return new PacketLogin();
             case PACKET_START_GAME:
                 return new PacketStartGame();
-            /*case PACKET_CRAFTING_RECIPES:
+            case PACKET_ENCRYPTION_READY:
+                return new PacketEncryptionReady();
+            case PACKET_SERVER_HANDSHAKE:
+                return new PacketServerHandshake();
+            case PACKET_CRAFTING_RECIPES:
                 return new PacketCraftingRecipes();
             case PACKET_INVENTORY_CONTENT_PACKET:
                 return new PacketInventoryContent();
-            case PACKET_CLIENT_HANDSHAKE:
-                return new PacketClientHandshake();
-            case PACKET_SERVER_HANDSHAKE:
-                return new PacketServerHandshake();
-            case PACKET_ENCRYPTION_READY:
-                return new PacketEncryptionReady();
-            case PACKET_ENTITY_METADATA:
+            /*case PACKET_ENTITY_METADATA:
                 return new PacketEntityMetadata();*/
             default:
                 return null;

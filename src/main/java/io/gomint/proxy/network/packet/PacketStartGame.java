@@ -6,6 +6,13 @@ import io.gomint.proxy.asset.AssetAssembler;
 import io.gomint.proxy.math.Location;
 import io.gomint.proxy.network.PacketRegistry;
 import io.gomint.proxy.util.StringShortPair;
+import io.gomint.taglib.AllocationLimitReachedException;
+import io.gomint.taglib.NBTReaderNoBuffer;
+import io.gomint.taglib.NBTTagCompound;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.ByteOrder;
+import java.util.Arrays;
 import lombok.Data;
 
 import java.util.ArrayList;
@@ -145,6 +152,7 @@ public class PacketStartGame extends Packet {
         this.gamemode = buffer.readSignedVarInt();
 
         this.spawn = new Location( buffer.readLFloat(), buffer.readLFloat(), buffer.readLFloat(), buffer.readLFloat(), buffer.readLFloat() );
+
         this.seed = buffer.readSignedVarInt();
         this.dimension = buffer.readSignedVarInt();
         this.generator = buffer.readSignedVarInt();
@@ -157,10 +165,11 @@ public class PacketStartGame extends Packet {
 
         this.hasAchievementsDisabled = buffer.readBoolean();
         this.dayCycleStopTime = buffer.readSignedVarInt();
-        this.eduMode = buffer.readBoolean();
+        buffer.readSignedVarInt();
         this.hasEduModeEnabled = buffer.readBoolean();
         this.rainLevel = buffer.readLFloat();
         this.lightningLevel = buffer.readLFloat();
+        buffer.readBoolean();
         this.isMultiplayerGame = buffer.readBoolean();
         this.hasLANBroadcast = buffer.readBoolean();
         buffer.readSignedVarInt();
@@ -179,22 +188,40 @@ public class PacketStartGame extends Packet {
         buffer.readBoolean();
         buffer.readBoolean();
         buffer.readBoolean();
+        buffer.readBoolean();
 
+        buffer.readString();
         this.levelId = buffer.readString();
         this.worldName = buffer.readString();
         this.templateName = buffer.readString();
         this.unknown1 = buffer.readBoolean();
+        buffer.readBoolean();
         this.currentTick = buffer.readLLong();
         this.enchantmentSeed = buffer.readSignedVarInt();
 
-        this.blockPalette = new ArrayList<>();
+        ByteArrayInputStream data = new ByteArrayInputStream(buffer.getBuffer(), buffer.getPosition(), buffer.getRemaining());
+        NBTReaderNoBuffer readerNoBuffer = new NBTReaderNoBuffer(data, ByteOrder.LITTLE_ENDIAN);
+        readerNoBuffer.setUseVarint(true);
 
-        int count = buffer.readUnsignedVarInt();
-        for ( int i = 0; i < count; i++ ) {
-            this.blockPalette.add( new StringShortPair( buffer.readString(), buffer.readLShort() ) );
+        try {
+            List<Object> compound = readerNoBuffer.parseList();
+            AssetAssembler.writeBlockPalette(compound);
+        } catch (IOException | AllocationLimitReachedException e) {
+            e.printStackTrace();
         }
 
-        AssetAssembler.writeBlockPalette( this.blockPalette );
+        buffer.setPosition(buffer.getBuffer().length - data.available());
+
+        List<StringShortPair> itemLegacyIds = new ArrayList<>();
+        int itemListLength = buffer.readUnsignedVarInt();
+        for (int i = 0; i < itemListLength; i++) {
+            String itemName = buffer.readString();
+            short legacyId = buffer.readLShort();
+            itemLegacyIds.add(new StringShortPair(itemName, legacyId));
+        }
+
+        AssetAssembler.writeLegacyItems(itemLegacyIds);
+        System.out.println(itemListLength);
     }
 
 }

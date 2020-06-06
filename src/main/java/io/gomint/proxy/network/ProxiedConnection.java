@@ -4,7 +4,8 @@ import io.gomint.jraknet.*;
 import io.gomint.proxy.Util;
 import io.gomint.proxy.jwt.*;
 import io.gomint.proxy.network.packet.Packet;
-import io.gomint.proxy.network.packet.PacketClientHandshake;
+import io.gomint.proxy.network.packet.PacketEncryptionReady;
+import io.gomint.proxy.network.packet.PacketLogin;
 import io.gomint.proxy.network.packet.PacketServerHandshake;
 import org.json.simple.JSONObject;
 import org.slf4j.Logger;
@@ -253,7 +254,7 @@ public class ProxiedConnection {
         }
 
         this.proxySocket.setEventHandler( new ProxySocketEventHandler() );
-        this.proxySocket.connect( address );
+        this.proxySocket.ping( address );
     }
 
     /**
@@ -322,11 +323,11 @@ public class ProxiedConnection {
     private void handleServerboundPacket( Packet packet ) {
         switch ( packet.getId() ) {
             case PacketRegistry.PACKET_CLIENT_HANDSHAKE:
-                this.handleClientHandshake( (PacketClientHandshake) packet );
+                this.handleClientHandshake( (PacketLogin) packet );
                 break;
-//            case PacketRegistry.PACKET_ENCRYPTION_READY:
-//                this.encryptionHandler.setEncryptionToClientEnabled( true );
-//                break;
+            case PacketRegistry.PACKET_ENCRYPTION_READY:
+                this.encryptionHandler.setEncryptionToClientEnabled( true );
+                break;
             default:
                 this.serverPacketQueue.add( packet );
                 break;
@@ -338,7 +339,7 @@ public class ProxiedConnection {
      *
      * @param packet The handshake packet that was received
      */
-    private void handleClientHandshake( PacketClientHandshake packet ) {
+    private void handleClientHandshake( PacketLogin packet ) {
         LOGGER.info( "Client protocol version: " + packet.getProtocol() );
 
         // More data please
@@ -414,8 +415,8 @@ public class ProxiedConnection {
         this.encryptionHandler.beginServersideEncryption( Base64.getDecoder().decode( (String) token.getClaim( "salt" ) ) );
 
         // Tell the server that we are ready to receive encrypted packets from now on:
-//        PacketEncryptionReady response = new PacketEncryptionReady();
-//        this.sendToServer( response );
+        PacketEncryptionReady response = new PacketEncryptionReady();
+        this.sendToServer( response );
     }
 
     /**
@@ -443,10 +444,10 @@ public class ProxiedConnection {
         byteBuffer.putInt( skin.length() );
         byteBuffer.put( skin.getBytes() );
 
-        PacketClientHandshake packetClientHandshake = new PacketClientHandshake();
-        packetClientHandshake.setProtocol( 354 );
-        packetClientHandshake.setPayload( byteBuffer.array() );
-        this.sendToServer( packetClientHandshake );
+        PacketLogin packetLogin = new PacketLogin();
+        packetLogin.setProtocol( 390 );
+        packetLogin.setPayload( byteBuffer.array() );
+        this.sendToServer(packetLogin);
     }
 
     /**
@@ -475,6 +476,7 @@ public class ProxiedConnection {
 
         while ( !queue.isEmpty() ) {
             Packet packet = queue.poll();
+            LOGGER.debug("{}: {}", direction, packet.getClass().getName());
 
             this.intermediatePacketBuffer.setPosition( 0 );
             this.intermediatePacketBuffer.writeByte( packet.getId() );
@@ -583,6 +585,7 @@ public class ProxiedConnection {
                 continue;
             }
 
+            LOGGER.debug("Unpacked packet: " + packet.getClass().getName());
             packet.deserialize( buffer1 );
             packets.add( packet );
         }
@@ -597,6 +600,13 @@ public class ProxiedConnection {
         @Override
         public void onSocketEvent( Socket socket, SocketEvent socketEvent ) {
             switch ( socketEvent.getType() ) {
+                case UNCONNECTED_PONG:
+                    String[] split = socketEvent.getPingPongInfo().getMotd().split(";");
+
+                    int port = Integer.parseInt(split[split.length - 2]);
+
+                    ProxiedConnection.this.proxySocket.connect(new InetSocketAddress( ((InetSocketAddress) socketEvent.getPingPongInfo().getAddress()).getHostName(), port));
+                    break;
                 case CONNECTION_ATTEMPT_FAILED:
                     ProxiedConnection.this.proxiedConnection = null;
                     ProxiedConnection.this.disconnect( "Failed to connect to backend server" );

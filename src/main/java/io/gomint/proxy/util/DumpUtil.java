@@ -57,6 +57,7 @@ public class DumpUtil {
         int overall = 0;
 
         StringBuilder stringBuilder = new StringBuilder( "0: ");
+        StringBuilder ascii = new StringBuilder("");
 
         int hadBytes = 0;
         for ( byte aByte : bytes ) {
@@ -64,6 +65,8 @@ public class DumpUtil {
             if ( hex.length() == 1 ) {
                 hex = "0" + hex;
             }
+
+            ascii.append(new String(new byte[]{aByte}));
 
             if ( hadBytes++ == skip ) {
                 stringBuilder.delete( stringBuilder.length() - 1, stringBuilder.length() );
@@ -74,7 +77,8 @@ public class DumpUtil {
 
             overall++;
             if ( count++ == 32 ) {
-                stringBuilder.append( "\n" ).append( overall ).append( ": " );
+                stringBuilder.append(" | ").append(ascii).append( "\n" ).append( overall ).append( ": " );
+                ascii = new StringBuilder("");
                 count = 0;
             }
         }
