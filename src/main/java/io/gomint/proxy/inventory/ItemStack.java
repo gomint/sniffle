@@ -8,6 +8,7 @@
 package io.gomint.proxy.inventory;
 
 import io.gomint.taglib.NBTTagCompound;
+import lombok.Data;
 import lombok.ToString;
 
 /**
@@ -18,8 +19,10 @@ import lombok.ToString;
  * @version 1.0
  */
 @ToString
+@Data
 public class ItemStack implements Cloneable {
 
+    private int id;
     private int material;
     private short data;
     private byte amount;

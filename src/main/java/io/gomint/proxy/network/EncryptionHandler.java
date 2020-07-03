@@ -2,6 +2,7 @@ package io.gomint.proxy.network;
 
 import io.gomint.proxy.jwt.JwtToken;
 import io.gomint.proxy.jwt.MojangChainValidator;
+import lombok.Getter;
 import org.bouncycastle.crypto.BufferedBlockCipher;
 import org.bouncycastle.crypto.InvalidCipherTextException;
 import org.bouncycastle.crypto.digests.SHA256Digest;
@@ -109,17 +110,13 @@ public class EncryptionHandler {
     private byte[] clientSalt;
     private boolean clientEncryptionEnabled;
     private Map<String, PublicKey> trustedKeys;
-    private AtomicLong clientSendCounter = new AtomicLong( 0 );
-    private AtomicLong clientReceiveCounter = new AtomicLong( 0 );
-    private byte[] clientKey;
+    @Getter private byte[] clientKey;
+    @Getter private byte[] clientIV;
 
     // Server Side:
     private ECPublicKey serverPublicKey;
-    private BufferedBlockCipher serverEncryptor;
-    private BufferedBlockCipher serverDecryptor;
-    private AtomicLong serverSendCounter = new AtomicLong( 0 );
-    private AtomicLong serverReceiveCounter = new AtomicLong( 0 );
-    private byte[] serverKey;
+    @Getter private byte[] serverKey;
+    @Getter private byte[] serverIV;
 
     // Miscellaneous:
 
@@ -286,11 +283,6 @@ public class EncryptionHandler {
      *             proxied server in a 0x03 packet)
      */
     public boolean beginServersideEncryption( byte[] salt ) {
-        if ( this.isEncryptionFromServerEnabled() ) {
-            // Already initialized:
-            return true;
-        }
-
         System.out.println( "Size of salt: " + salt.length );
 
         // Generate shared secret from ECDH keys:
@@ -301,11 +293,8 @@ public class EncryptionHandler {
 
         // Derive key as salted SHA-256 hash digest:
         this.serverKey = this.hashSHA256( salt, secret );
-        byte[] iv = this.takeBytesFromArray( this.serverKey, 0, 16 );
+        this.serverIV = this.takeBytesFromArray( this.serverKey, 0, 16 );
 
-        // Initialize BlockCiphers:
-        this.serverEncryptor = this.createCipher( true, this.serverKey, iv );
-        this.serverDecryptor = this.createCipher( false, this.serverKey, iv );
         return true;
     }
 
@@ -315,11 +304,6 @@ public class EncryptionHandler {
      * @return Whether or not the setup completed successfully
      */
     public boolean beginClientsideEncryption() {
-        if ( this.isEncryptionFromClientEnabled() ) {
-            // Already initialized:
-            return true;
-        }
-
         // Generate a random salt:
         SecureRandom random = new SecureRandom();
         this.clientSalt = new byte[16];
@@ -333,11 +317,8 @@ public class EncryptionHandler {
 
         // Derive key as salted SHA-256 hash digest:
         this.clientKey = this.hashSHA256( this.clientSalt, secret );
-        byte[] iv = this.takeBytesFromArray( this.clientKey, 0, 16 );
+        this.clientIV = this.takeBytesFromArray( this.clientKey, 0, 16 );
 
-        // Initialize BlockCiphers:
-        this.clientEncryptor = this.createCipher( true, this.clientKey, iv );
-        this.clientDecryptor = this.createCipher( false, this.clientKey, iv );
         return true;
     }
 
@@ -345,114 +326,8 @@ public class EncryptionHandler {
         return this.clientSalt;
     }
 
-    public boolean isEncryptionFromClientEnabled() {
-        return ( this.clientEncryptor != null && this.clientDecryptor != null );
-    }
-
-    public boolean isEncryptionToClientEnabled() {
-        return ( this.clientEncryptionEnabled );
-    }
-
-    public boolean isEncryptionFromServerEnabled() {
-        return ( this.serverEncryptor != null && this.serverDecryptor != null );
-    }
-
-    public boolean isEncryptionToServerEnabled() {
-        return this.isEncryptionFromServerEnabled();
-    }
-
     public void setEncryptionToClientEnabled( boolean enabled ) {
         this.clientEncryptionEnabled = enabled;
-    }
-
-    public byte[] decryptInputFromClient( byte[] input ) {
-        byte[] output = this.processCipher( this.clientDecryptor, input );
-        if ( output == null ) {
-            return null;
-        }
-
-        byte[] outputChunked = new byte[input.length - 8];
-        System.arraycopy( output, 0, outputChunked, 0, outputChunked.length );
-
-        byte[] hashBytes = calcHash( outputChunked, this.clientKey, this.clientReceiveCounter );
-        for ( int i = output.length - 8; i < output.length; i++ ) {
-            if ( hashBytes[i - ( output.length - 8 )] != output[i] ) {
-                return null;
-            }
-        }
-
-        return outputChunked;
-    }
-
-    public byte[] decryptInputFromServer( byte[] input ) {
-        byte[] output = this.processCipher( this.serverDecryptor, input );
-        if ( output == null ) {
-            return null;
-        }
-
-        byte[] outputChunked = new byte[input.length - 8];
-
-        System.arraycopy( output, 0, outputChunked, 0, outputChunked.length );
-
-        byte[] hashBytes = calcHash( outputChunked, this.serverKey, this.serverReceiveCounter );
-        for ( int i = output.length - 8; i < output.length; i++ ) {
-            if ( hashBytes[i - ( output.length - 8 )] != output[i] ) {
-                return null;
-            }
-        }
-
-        return outputChunked;
-    }
-
-    public byte[] encryptInputForClient( byte[] input ) {
-        byte[] hashBytes = calcHash( input, this.clientKey, this.clientSendCounter );
-        byte[] finalInput = new byte[hashBytes.length + input.length];
-
-        System.arraycopy( input, 0, finalInput, 0, input.length );
-        System.arraycopy( hashBytes, 0, finalInput, input.length, 8 );
-
-        return this.processCipher( this.clientEncryptor, finalInput );
-    }
-
-    public byte[] encryptInputForServer( byte[] input ) {
-        byte[] hashBytes = calcHash( input, this.serverKey, this.serverSendCounter );
-        byte[] finalInput = new byte[hashBytes.length + input.length];
-
-        System.arraycopy( input, 0, finalInput, 0, input.length );
-        System.arraycopy( hashBytes, 0, finalInput, input.length, 8 );
-
-        return this.processCipher( this.serverEncryptor, finalInput );
-    }
-
-    private byte[] processCipher( BufferedBlockCipher cipher, byte[] input ) {
-        byte[] output = new byte[cipher.getOutputSize( input.length )];
-        int cursor = cipher.processBytes( input, 0, input.length, output, 0 );
-
-        try {
-            // cursor += cipher.doFinal( output, cursor );
-            if ( cursor != output.length ) {
-                throw new InvalidCipherTextException( "Output size did not match cursor" );
-            }
-        } catch ( InvalidCipherTextException e ) {
-            LOGGER.error( "Could not encrypt/decrypt to/from cipher-text", e );
-            return null;
-        }
-
-        return output;
-    }
-
-    // ========================================== Utility Methods
-
-    private byte[] calcHash( byte[] input, byte[] key, AtomicLong counter ) {
-        SHA256Digest digest = new SHA256Digest();
-
-        byte[] result = new byte[digest.getDigestSize()];
-        digest.update( ByteBuffer.allocate( 8 ).order( ByteOrder.LITTLE_ENDIAN ).putLong( counter.getAndIncrement() ).array(), 0, 8 );
-        digest.update( input, 0, input.length );
-        digest.update( key, 0, key.length );
-        digest.doFinal( result, 0 );
-
-        return Arrays.copyOf( result, 8 );
     }
 
     private byte[] generateECDHSecret( PrivateKey privateKey, PublicKey publicKey ) {
@@ -484,12 +359,6 @@ public class EncryptionHandler {
         digest.doFinal( result, 0 );
 
         return result;
-    }
-
-    private BufferedBlockCipher createCipher( boolean encryptor, byte[] key, byte[] iv ) {
-        BufferedBlockCipher cipher = new BufferedBlockCipher( new CFBBlockCipher( new RijndaelEngine( 128 ), 8 ) );
-        cipher.init( encryptor, new ParametersWithIV( new KeyParameter( key ), iv ) );
-        return cipher;
     }
 
     /**

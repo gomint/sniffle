@@ -7,12 +7,9 @@ import io.gomint.proxy.math.Location;
 import io.gomint.proxy.network.PacketRegistry;
 import io.gomint.proxy.util.StringShortPair;
 import io.gomint.taglib.AllocationLimitReachedException;
-import io.gomint.taglib.NBTReaderNoBuffer;
-import io.gomint.taglib.NBTTagCompound;
-import java.io.ByteArrayInputStream;
+import io.gomint.taglib.NBTReader;
 import java.io.IOException;
 import java.nio.ByteOrder;
-import java.util.Arrays;
 import lombok.Data;
 
 import java.util.ArrayList;
@@ -25,6 +22,9 @@ import java.util.Map;
  */
 @Data
 public class PacketStartGame extends Packet {
+
+    private byte[] data;
+
     // Entity data
     private long entityId;
     private long runtimeEntityId;
@@ -86,67 +86,17 @@ public class PacketStartGame extends Packet {
 
     @Override
     public void serialize( PacketBuffer buffer ) {
-        buffer.writeSignedVarLong( this.entityId );
-        buffer.writeUnsignedVarLong( this.runtimeEntityId );
-        buffer.writeSignedVarInt( this.gamemode );
-
-        buffer.writeLFloat( this.spawn.getX() );
-        buffer.writeLFloat( this.spawn.getY() );
-        buffer.writeLFloat( this.spawn.getZ() );
-        buffer.writeLFloat( this.spawn.getYaw() );
-        buffer.writeLFloat( this.spawn.getPitch() );
-
-        buffer.writeSignedVarInt( this.seed );
-        buffer.writeSignedVarInt( this.dimension );
-        buffer.writeSignedVarInt( this.generator );
-        buffer.writeSignedVarInt( this.worldGamemode );
-        buffer.writeSignedVarInt( this.difficulty );
-
-        buffer.writeSignedVarInt( (int) this.spawn.getX() );
-        buffer.writeSignedVarInt( (int) this.spawn.getY() );
-        buffer.writeSignedVarInt( (int) this.spawn.getZ() );
-
-        buffer.writeBoolean( this.hasAchievementsDisabled );
-        buffer.writeSignedVarInt( this.dayCycleStopTime );
-        buffer.writeBoolean( this.eduMode );
-        buffer.writeBoolean( this.hasEduModeEnabled );
-        buffer.writeLFloat( this.rainLevel );
-        buffer.writeLFloat( this.lightningLevel );
-        buffer.writeBoolean(false);
-        buffer.writeBoolean( this.isMultiplayerGame );
-        buffer.writeBoolean( this.hasLANBroadcast );
-        buffer.writeSignedVarInt(3);
-        buffer.writeSignedVarInt(3);
-        buffer.writeBoolean( this.commandsEnabled );
-        buffer.writeBoolean( this.isTexturePacksRequired );
-        writeGamerules( this.gamerules, buffer );
-        buffer.writeBoolean( this.hasBonusChestEnabled );
-        buffer.writeBoolean( this.hasStartWithMapEnabled );
-        buffer.writeSignedVarInt( this.defaultPlayerPermission );
-        buffer.writeInt(this.serverTickRate);
-        buffer.writeBoolean( this.lockedBehaviour );
-        buffer.writeBoolean( this.lockedResource );
-        buffer.writeBoolean( this.lockedWorld );
-        buffer.writeBoolean( false );
-        buffer.writeBoolean( false );
-        buffer.writeBoolean( false );
-
-        buffer.writeString( this.levelId );
-        buffer.writeString( this.worldName );
-        buffer.writeString( this.templateName );
-        buffer.writeBoolean( this.unknown1 );
-        buffer.writeLLong( this.currentTick );
-        buffer.writeSignedVarInt( this.enchantmentSeed );
-
-        buffer.writeUnsignedVarInt( this.blockPalette.size() );
-        for ( StringShortPair pair : this.blockPalette ) {
-            buffer.writeString( pair.getBlockId() );
-            buffer.writeLShort( pair.getData() );
-        }
+        buffer.writeBytes(this.data);
     }
 
     @Override
     public void deserialize( PacketBuffer buffer ) {
+        // Copy first
+        int pos = buffer.getReadPosition();
+        this.data = new byte[buffer.getRemaining()];
+        buffer.readBytes(this.data);
+        buffer.setReadPosition(pos);
+
         this.entityId = buffer.readSignedVarLong().longValue();
         this.runtimeEntityId = buffer.readUnsignedVarLong();
         this.gamemode = buffer.readSignedVarInt();
@@ -154,19 +104,24 @@ public class PacketStartGame extends Packet {
         this.spawn = new Location( buffer.readLFloat(), buffer.readLFloat(), buffer.readLFloat(), buffer.readLFloat(), buffer.readLFloat() );
 
         this.seed = buffer.readSignedVarInt();
+
+        short biomeType = buffer.readLShort();
+        String biomeName = buffer.readString();
         this.dimension = buffer.readSignedVarInt();
+
         this.generator = buffer.readSignedVarInt();
         this.worldGamemode = buffer.readSignedVarInt();
         this.difficulty = buffer.readSignedVarInt();
 
-        buffer.readSignedVarInt();
-        buffer.readSignedVarInt();
-        buffer.readSignedVarInt();
+        int spawnX = buffer.readSignedVarInt();
+        int spawnY = buffer.readSignedVarInt();
+        int spawnZ = buffer.readSignedVarInt();
 
         this.hasAchievementsDisabled = buffer.readBoolean();
         this.dayCycleStopTime = buffer.readSignedVarInt();
-        buffer.readSignedVarInt();
+        int eudOffer = buffer.readSignedVarInt();
         this.hasEduModeEnabled = buffer.readBoolean();
+        String eduProductID = buffer.readString();
         this.rainLevel = buffer.readLFloat();
         this.lightningLevel = buffer.readLFloat();
         buffer.readBoolean();
@@ -191,6 +146,14 @@ public class PacketStartGame extends Packet {
         buffer.readBoolean();
 
         buffer.readString();
+
+        buffer.readLInt();
+        buffer.readLInt();
+        buffer.readBoolean();
+        if (buffer.readBoolean()) {
+            buffer.readBoolean();
+        }
+
         this.levelId = buffer.readString();
         this.worldName = buffer.readString();
         this.templateName = buffer.readString();
@@ -199,8 +162,7 @@ public class PacketStartGame extends Packet {
         this.currentTick = buffer.readLLong();
         this.enchantmentSeed = buffer.readSignedVarInt();
 
-        ByteArrayInputStream data = new ByteArrayInputStream(buffer.getBuffer(), buffer.getPosition(), buffer.getRemaining());
-        NBTReaderNoBuffer readerNoBuffer = new NBTReaderNoBuffer(data, ByteOrder.LITTLE_ENDIAN);
+        NBTReader readerNoBuffer = new NBTReader(buffer.getBuffer(), ByteOrder.LITTLE_ENDIAN);
         readerNoBuffer.setUseVarint(true);
 
         try {
@@ -209,8 +171,6 @@ public class PacketStartGame extends Packet {
         } catch (IOException | AllocationLimitReachedException e) {
             e.printStackTrace();
         }
-
-        buffer.setPosition(buffer.getBuffer().length - data.available());
 
         List<StringShortPair> itemLegacyIds = new ArrayList<>();
         int itemListLength = buffer.readUnsignedVarInt();

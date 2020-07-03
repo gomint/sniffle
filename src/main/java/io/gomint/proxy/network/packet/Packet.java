@@ -12,14 +12,11 @@ import io.gomint.proxy.Gamerule;
 import io.gomint.proxy.inventory.ItemStack;
 import io.gomint.proxy.math.BlockPosition;
 import io.gomint.proxy.math.Vector;
-import io.gomint.proxy.util.DumpUtil;
 import io.gomint.taglib.AllocationLimitReachedException;
 import io.gomint.taglib.NBTReader;
-import io.gomint.taglib.NBTReaderNoBuffer;
 import io.gomint.taglib.NBTTagCompound;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
+import io.gomint.taglib.NBTWriter;
 import java.io.IOException;
 import java.nio.ByteOrder;
 import java.util.HashMap;
@@ -35,14 +32,14 @@ public abstract class Packet {
     /**
      * Internal MC:PE id of this packet
      */
-    protected final byte id;
+    protected final int id;
 
     /**
      * Constructor for implemented Packets
      *
      * @param id The id which the Packet should use
      */
-    protected Packet(byte id) {
+    protected Packet(int id) {
         this.id = id;
     }
 
@@ -51,7 +48,7 @@ public abstract class Packet {
      *
      * @return The packet's ID
      */
-    public byte getId() {
+    public int getId() {
         return this.id;
     }
 
@@ -155,12 +152,15 @@ public abstract class Packet {
             buffer.writeLShort((short) 0);
         } else {
             try {
-                ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-                compound.writeTo(byteArrayOutputStream, false, ByteOrder.LITTLE_ENDIAN);
-                buffer.writeLShort((short) byteArrayOutputStream.size());
-                buffer.writeBytes(byteArrayOutputStream.toByteArray());
+                // Vanilla currently only writes one nbt tag (this is hardcoded)
+                buffer.writeLShort((short) 0xFFFF);
+                buffer.writeByte((byte) 1);
+
+                // NBT Tag
+                NBTWriter nbtWriter = new NBTWriter(buffer.getBuffer(), ByteOrder.LITTLE_ENDIAN);
+                nbtWriter.setUseVarint(true);
+                nbtWriter.write(compound);
             } catch (IOException e) {
-                e.printStackTrace();
                 buffer.writeLShort((short) 0);
             }
         }
@@ -227,24 +227,28 @@ public abstract class Packet {
 
         NBTTagCompound nbt = null;
         short extraLen = buffer.readLShort();
-        if (extraLen == -1) {
+        if (extraLen > 0) {
+            try {
+                NBTReader nbtReader = new NBTReader(buffer.getBuffer(), ByteOrder.LITTLE_ENDIAN);
+                nbtReader.setUseVarint(true);
+                // There is no alloc limit needed here, you can't write so much shit in 32kb, so thats ok
+                nbt = nbtReader.parse();
+            } catch (IOException | AllocationLimitReachedException e) {
+                return null;
+            }
+        } else if (extraLen == -1) {
             // New system uses a byte as amount of nbt tags
             byte count = buffer.readByte();
             for (byte i = 0; i < count; i++) {
-                ByteArrayInputStream bin = new ByteArrayInputStream(buffer.getBuffer(), buffer.getPosition(), buffer.getRemaining());
                 try {
-                    NBTReaderNoBuffer nbtReader = new NBTReaderNoBuffer(bin, ByteOrder.LITTLE_ENDIAN);
+                    NBTReader nbtReader = new NBTReader(buffer.getBuffer(), ByteOrder.LITTLE_ENDIAN);
                     nbtReader.setUseVarint(true);
                     // There is no alloc limit needed here, you can't write so much shit in 32kb, so thats ok
                     nbt = nbtReader.parse();
                 } catch (IOException | AllocationLimitReachedException e) {
                     return null;
                 }
-
-                buffer.setPosition(buffer.getBuffer().length - bin.available());
             }
-        } else if (extraLen > 0) {
-            System.out.println("NBT LEN > 0");
         }
 
         // They implemented additional data for item stacks aside from nbt
@@ -286,5 +290,61 @@ public abstract class Packet {
     Vector readVector(PacketBuffer buffer) {
         return new Vector(buffer.readLFloat(), buffer.readLFloat(), buffer.readLFloat());
     }
+
+    public void serializeHeader(PacketBuffer buffer) {
+        buffer.writeUnsignedVarInt(this.id);
+    }
+
+    /**
+     * Write a array of item stacks to the buffer
+     *
+     * @param itemStacks which should be written to the buffer
+     * @param buffer     which should be written to
+     */
+    void writeItemStacksWithIDs(ItemStack[] itemStacks, PacketBuffer buffer) {
+        if (itemStacks == null || itemStacks.length == 0) {
+            buffer.writeUnsignedVarInt(0);
+            return;
+        }
+
+        buffer.writeUnsignedVarInt(itemStacks.length);
+
+        for (ItemStack itemStack : itemStacks) {
+            writeItemStackWithID(itemStack, buffer);
+        }
+    }
+
+    public static ItemStack readItemStackWithID(PacketBuffer buffer) {
+        int id = buffer.readSignedVarInt();
+        ItemStack itemStack = readItemStack(buffer);
+        if (itemStack != null) {
+            itemStack.setId(id);
+        }
+
+        return itemStack;
+    }
+
+    public static void writeItemStackWithID(ItemStack itemStack, PacketBuffer buffer) {
+        buffer.writeSignedVarInt(itemStack.getId());
+        writeItemStack(itemStack, buffer);
+    }
+
+    /**
+     * Read in a variable amount of itemstacks
+     *
+     * @param buffer The buffer to read from
+     * @return a list of item stacks
+     */
+    ItemStack[] readItemStacksWithIDs(PacketBuffer buffer) {
+        int count = buffer.readUnsignedVarInt();
+        ItemStack[] itemStacks = new ItemStack[count];
+
+        for (int i = 0; i < count; i++) {
+            itemStacks[i] = readItemStackWithID(buffer);
+        }
+
+        return itemStacks;
+    }
+
 
 }

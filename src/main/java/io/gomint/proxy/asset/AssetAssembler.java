@@ -6,9 +6,14 @@ import io.gomint.proxy.util.StringShortPair;
 import io.gomint.taglib.AllocationLimitReachedException;
 import io.gomint.taglib.NBTTagCompound;
 
+import io.gomint.taglib.NBTWriter;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.PooledByteBufAllocator;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -21,145 +26,138 @@ import java.util.UUID;
  */
 public class AssetAssembler {
 
-    private static NBTTagCompound readFromFile() {
-        File file = new File( "assets.dat" );
-        try {
-            FileInputStream fileInputStream = new FileInputStream( file );
-            return NBTTagCompound.readFrom( fileInputStream, true, ByteOrder.BIG_ENDIAN );
-        } catch ( IOException e ) {
-            return new NBTTagCompound( "assets" );
-        } catch (AllocationLimitReachedException e) {
-            e.printStackTrace();
-            return new NBTTagCompound( "assets" );
-        }
+  private static final NBTTagCompound compound = new NBTTagCompound("");
+
+  static {
+    File file = new File("assets.dat");
+    if (file.exists()) {
+      file.delete();
+    }
+  }
+
+  public static void writeToFile() {
+    ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer();
+    NBTWriter nbtWriter = new NBTWriter(buf, ByteOrder.BIG_ENDIAN);
+
+    try {
+      nbtWriter.write(compound);
+    } catch (IOException e) {
+      e.printStackTrace();
     }
 
-    private static void writeToFile( NBTTagCompound compound ) {
-        try {
-            compound.writeTo( new File( "assets.dat" ), true, ByteOrder.BIG_ENDIAN );
-        } catch ( IOException e ) {
-            e.printStackTrace();
-        }
+    try (FileOutputStream out = new FileOutputStream(new File("assets.dat"))) {
+      byte[] data = new byte[buf.readableBytes()];
+      buf.readBytes(data);
+      out.write(data);
+    } catch (IOException e) {
+      e.printStackTrace();
     }
 
-    public static void addRecipe( String name, UUID uuid, byte type, ItemStack[] in, ItemStack[] out, int width, int height, String block, int prio ) {
-        NBTTagCompound compound = readFromFile();
+    buf.release();
+  }
 
-        List<Object> recipes = compound.getList( "recipes", true );
+  public static synchronized void addRecipe(String name, UUID uuid, byte type, ItemStack[] in, ItemStack[] out,
+      int width, int height, String block, int prio) {
+    List<Object> recipes = compound.getList("recipes", true);
 
-        NBTTagCompound recipeCompound = new NBTTagCompound( "" );
+    NBTTagCompound recipeCompound = new NBTTagCompound("");
 
-        if (name != null) {
-            recipeCompound.addValue("name", name);
-        }
-
-        if (block != null) {
-            recipeCompound.addValue("block", block);
-        }
-
-        recipeCompound.addValue("prio", prio);
-        recipeCompound.addValue( "type", type );
-
-        List<byte[]> input = new ArrayList<>();
-        for ( ItemStack itemStack : in ) {
-            input.add( serializeItem( itemStack ) );
-        }
-
-        recipeCompound.addValue( "i", input );
-
-        List<byte[]> output = new ArrayList<>();
-        for ( ItemStack itemStack : out ) {
-            output.add( serializeItem( itemStack ) );
-        }
-
-        recipeCompound.addValue( "o", output );
-
-        if ( uuid != null ) {
-            recipeCompound.addValue( "u", uuid.toString() );
-        }
-
-        if ( width != -1 && height != -1 ) {
-            recipeCompound.addValue( "w", width );
-            recipeCompound.addValue( "h", height );
-        }
-
-        recipes.add( recipeCompound );
-        writeToFile( compound );
+    if (name != null) {
+      recipeCompound.addValue("name", name);
     }
 
-    public static void writeCreativeInventory( ItemStack[] items ) {
-        NBTTagCompound compound = readFromFile();
-
-        List<Object> nbtTags = compound.getList( "creativeInventory", true );
-        nbtTags.clear();
-
-        for ( ItemStack item : items ) {
-            byte[] itemData = serializeItem( item );
-            nbtTags.add( itemData );
-        }
-
-        writeToFile( compound );
+    if (block != null) {
+      recipeCompound.addValue("block", block);
     }
 
-    public static void writeLegacyItems(List<StringShortPair> itemLegacyIds) {
-        NBTTagCompound compound = readFromFile();
+    recipeCompound.addValue("prio", prio);
+    recipeCompound.addValue("type", type);
 
-        List<Object> nbtTags = compound.getList( "itemLegacyIDs", true );
-        nbtTags.clear();
-
-        for (StringShortPair itemLegacyId : itemLegacyIds) {
-            NBTTagCompound l = new NBTTagCompound("");
-            l.addValue("name", itemLegacyId.getBlockId());
-            l.addValue("id", itemLegacyId.getData());
-            nbtTags.add(l);
-        }
-
-        writeToFile( compound );
+    List<byte[]> input = new ArrayList<>();
+    for (ItemStack itemStack : in) {
+      input.add(serializeItem(itemStack));
     }
 
-    public static void writeBlockPalette( List<Object> blockPalette ) {
-        NBTTagCompound compound = readFromFile();
+    recipeCompound.addValue("i", input);
 
-        List<Object> nbtTags = compound.getList( "blockPalette", true );
-        nbtTags.clear();
-        nbtTags.addAll( blockPalette );
-        writeToFile( compound );
+    List<byte[]> output = new ArrayList<>();
+    for (ItemStack itemStack : out) {
+      output.add(serializeItem(itemStack));
     }
 
-    private static byte[] serializeItem( ItemStack itemStack ) {
-        PacketBuffer buffer = new PacketBuffer( 2 );
-        if ( itemStack == null ) {
-            System.out.println( "Nulled item" );
-        }
+    recipeCompound.addValue("o", output);
 
-        buffer.writeShort( (short) itemStack.getMaterial() );
-        buffer.writeByte( itemStack.getAmount() );
-        buffer.writeShort( itemStack.getData() );
-
-        if ( itemStack.getNbtData() != null ) {
-            ByteArrayOutputStream bon = new ByteArrayOutputStream();
-            try {
-                itemStack.getNbtData().writeTo( bon, false, ByteOrder.BIG_ENDIAN );
-            } catch ( IOException e ) {
-
-            }
-
-            byte[] data = bon.toByteArray();
-            buffer.writeShort( (short) data.length );
-            buffer.writeBytes( data );
-        } else {
-            buffer.writeShort( (short) 0 );
-        }
-
-        return buffer.getBuffer();
+    if (uuid != null) {
+      recipeCompound.addValue("u", uuid.toString());
     }
 
-    public static void resetRecipes() {
-        NBTTagCompound compound = readFromFile();
-        List<Object> recipes = compound.getList( "recipes", false );
-        if ( recipes != null ) {
-            recipes.clear();
-            writeToFile(compound);
-        }
+    if (width != -1 && height != -1) {
+      recipeCompound.addValue("w", width);
+      recipeCompound.addValue("h", height);
     }
+
+    recipes.add(recipeCompound);
+  }
+
+  public static synchronized void writeCreativeInventory(ItemStack[] items) {
+    List<Object> nbtTags = compound.getList("creativeInventory", true);
+    nbtTags.clear();
+
+    for (ItemStack item : items) {
+      byte[] itemData = serializeItem(item);
+      nbtTags.add(itemData);
+    }
+  }
+
+  public static synchronized void writeLegacyItems(List<StringShortPair> itemLegacyIds) {
+    List<Object> nbtTags = compound.getList("itemLegacyIDs", true);
+    nbtTags.clear();
+
+    for (StringShortPair itemLegacyId : itemLegacyIds) {
+      NBTTagCompound l = new NBTTagCompound("");
+      l.addValue("name", itemLegacyId.getBlockId());
+      l.addValue("id", itemLegacyId.getData());
+      nbtTags.add(l);
+    }
+  }
+
+  public static synchronized void writeBlockPalette(List<Object> blockPalette) {
+    List<Object> nbtTags = compound.getList("blockPalette", true);
+    nbtTags.clear();
+    nbtTags.addAll(blockPalette);
+  }
+
+  private static byte[] serializeItem(ItemStack itemStack) {
+    PacketBuffer buffer = new PacketBuffer(2);
+    if (itemStack == null) {
+      System.out.println("Nulled item");
+    }
+
+    buffer.writeShort((short) itemStack.getMaterial());
+    buffer.writeByte(itemStack.getAmount());
+    buffer.writeShort(itemStack.getData());
+
+    if (itemStack.getNbtData() != null) {
+      ByteBuf nbtBuf = PooledByteBufAllocator.DEFAULT.directBuffer();
+      try {
+        itemStack.getNbtData().writeTo(nbtBuf, false, ByteOrder.BIG_ENDIAN);
+      } catch (IOException e) {
+
+      }
+
+      buffer.writeShort((short) nbtBuf.readableBytes());
+      buffer.writeBytes(nbtBuf);
+    } else {
+      buffer.writeShort((short) 0);
+    }
+
+    byte[] data = new byte[buffer.getRemaining()];
+    buffer.readBytes(data);
+    return data;
+  }
+
+  public static synchronized void writeBiomeDefinition(NBTTagCompound nbt) {
+    compound.addValue("biomeDefinitions", nbt.deepClone("biomeDefinitions"));
+  }
+
 }

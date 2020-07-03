@@ -37,6 +37,9 @@ public class Main {
 			return;
 		}
 
+		// Enable reflection access to JDK NIO buffers for netty
+		System.setProperty( "io.netty.tryReflectionSetAccessible","true");
+
 		Security.addProvider( new org.bouncycastle.jce.provider.BouncyCastleProvider() );
 		
 		// Generate proxy keypair:

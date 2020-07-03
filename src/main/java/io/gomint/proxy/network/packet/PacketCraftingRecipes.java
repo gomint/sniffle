@@ -38,8 +38,6 @@ public class PacketCraftingRecipes extends Packet {
 
     @Override
     public void deserialize( PacketBuffer buffer ) {
-        AssetAssembler.resetRecipes();
-
         int count = buffer.readUnsignedVarInt();
         for ( int i = 0; i < count; i++ ) {
             int recipeType = buffer.readSignedVarInt();
@@ -73,6 +71,8 @@ public class PacketCraftingRecipes extends Packet {
                     UUID uuid = buffer.readUUID();
                     String block = buffer.readString();
                     int prio = buffer.readSignedVarInt();
+                    buffer.readUnsignedVarInt(); // Unneeded
+
                     AssetAssembler.addRecipe( name, uuid, (byte) recipeType, input, output, -1, -1, block, prio );
                     break;
                 case 7:
@@ -101,6 +101,8 @@ public class PacketCraftingRecipes extends Packet {
                     uuid = buffer.readUUID();
                     block = buffer.readString();
                     prio = buffer.readSignedVarInt();
+                    buffer.readUnsignedVarInt(); // Unneeded
+
                     AssetAssembler.addRecipe( name, uuid, (byte) recipeType, input, output, width, height, block, prio );
                     break;
 
@@ -129,6 +131,7 @@ public class PacketCraftingRecipes extends Packet {
 
                 case 4:
                     UUID uuid1 = buffer.readUUID();
+                    buffer.readUnsignedVarInt(); // Unneeded
                     // TODO: What is a multi recipe?
                     break;
                 default:
@@ -138,10 +141,14 @@ public class PacketCraftingRecipes extends Packet {
 
         for(int i = 0, count1 = buffer.readUnsignedVarInt(); i < count1; ++i){
             int input = buffer.readSignedVarInt();
+            int inputMeta = buffer.readSignedVarInt();
             int ingredient = buffer.readSignedVarInt();
+            int ingredientMeta = buffer.readSignedVarInt();
             int output = buffer.readSignedVarInt();
+            int outputMeta = buffer.readSignedVarInt();
 
-            AssetAssembler.addRecipe( null, null, (byte) 101, new ItemStack[]{ new ItemStack( input, (short) 0, 1 ), new ItemStack( ingredient, (short) 0, 1) }, new ItemStack[]{ new ItemStack(output, (short)0, 1) }, -1, -1, null, 0 );
+            AssetAssembler.addRecipe( null, null, (byte) 101, new ItemStack[]{ new ItemStack( input, (short) inputMeta, 1 ),
+                new ItemStack( ingredient, (short) ingredientMeta, 1) }, new ItemStack[]{ new ItemStack(output, (short) outputMeta, 1) }, -1, -1, null, 0 );
         }
 
         for(int i = 0, count1 = buffer.readUnsignedVarInt(); i < count1; ++i){
@@ -149,11 +156,13 @@ public class PacketCraftingRecipes extends Packet {
             int ingredient = buffer.readSignedVarInt();
             int output = buffer.readSignedVarInt();
 
-            AssetAssembler.addRecipe( null, null, (byte) 102, new ItemStack[]{ new ItemStack( input, (short) 0, 1 ), new ItemStack( ingredient, (short) 0, 1) }, new ItemStack[]{ new ItemStack(output, (short)0, 1) }, -1, -1, null, 0 );
+            AssetAssembler.addRecipe( null, null, (byte) 102, new ItemStack[]{ new ItemStack( input, (short) 0, 1 ),
+                new ItemStack( ingredient, (short) 0, 1) }, new ItemStack[]{ new ItemStack(output, (short)0, 1) }, -1, -1, null, 0 );
         }
 
         buffer.readBoolean();
         System.out.println("Read all recipes");
+        AssetAssembler.writeToFile();
     }
 
 }
