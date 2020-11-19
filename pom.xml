@@ -49,7 +49,7 @@
         <dependency>
             <groupId>io.gomint</groupId>
             <artifactId>jraknet</artifactId>
-            <version>7.0.1-SNAPSHOT</version>
+            <version>7.0.10-SNAPSHOT</version>
         </dependency>
 
         <dependency>
@@ -102,6 +102,12 @@
             <version>4.1.50.Final</version>
         </dependency>
 
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.12</version>
+        </dependency>
+
     </dependencies>
 
     <build>
@@ -118,7 +124,7 @@
                         <path>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
-                            <version>1.18.8</version>
+                            <version>1.18.12</version>
                         </path>
                     </annotationProcessorPaths>
                     <!-- this helps when getting error: file should be on source path, or on patch path for module -->

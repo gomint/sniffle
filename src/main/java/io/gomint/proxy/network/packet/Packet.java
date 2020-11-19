@@ -17,6 +17,7 @@ import io.gomint.taglib.NBTReader;
 import io.gomint.taglib.NBTTagCompound;
 
 import io.gomint.taglib.NBTWriter;
+
 import java.io.IOException;
 import java.nio.ByteOrder;
 import java.util.HashMap;
@@ -227,7 +228,9 @@ public abstract class Packet {
 
         NBTTagCompound nbt = null;
         short extraLen = buffer.readLShort();
-        if (extraLen > 0) {
+        if (extraLen == -1) {
+            byte version = buffer.readByte(); // Version
+
             try {
                 NBTReader nbtReader = new NBTReader(buffer.getBuffer(), ByteOrder.LITTLE_ENDIAN);
                 nbtReader.setUseVarint(true);
@@ -235,19 +238,6 @@ public abstract class Packet {
                 nbt = nbtReader.parse();
             } catch (IOException | AllocationLimitReachedException e) {
                 return null;
-            }
-        } else if (extraLen == -1) {
-            // New system uses a byte as amount of nbt tags
-            byte count = buffer.readByte();
-            for (byte i = 0; i < count; i++) {
-                try {
-                    NBTReader nbtReader = new NBTReader(buffer.getBuffer(), ByteOrder.LITTLE_ENDIAN);
-                    nbtReader.setUseVarint(true);
-                    // There is no alloc limit needed here, you can't write so much shit in 32kb, so thats ok
-                    nbt = nbtReader.parse();
-                } catch (IOException | AllocationLimitReachedException e) {
-                    return null;
-                }
             }
         }
 
@@ -264,7 +254,7 @@ public abstract class Packet {
         }
 
         // Special case shield?
-        if (id == 513) {
+        if (id == 355) {
             buffer.readSignedVarInt();
         }
 

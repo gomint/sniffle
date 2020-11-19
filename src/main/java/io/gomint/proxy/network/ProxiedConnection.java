@@ -458,7 +458,7 @@ public class ProxiedConnection {
         byteBuffer.put( skin.getBytes() );
 
         PacketLogin packetLogin = new PacketLogin();
-        packetLogin.setProtocol( 407 );
+        packetLogin.setProtocol( 419 );
         packetLogin.setPayload( byteBuffer.array() );
         this.sendToServer(packetLogin);
     }

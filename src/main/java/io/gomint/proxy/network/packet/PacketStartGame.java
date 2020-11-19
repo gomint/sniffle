@@ -132,6 +132,11 @@ public class PacketStartGame extends Packet {
         this.commandsEnabled = buffer.readBoolean();
         this.isTexturePacksRequired = buffer.readBoolean();
         this.gamerules = readGamerules( buffer );
+
+        int experiments = buffer.readLInt();
+        System.out.println("Amount of experiments: " + experiments);
+        buffer.readBoolean();
+
         this.hasBonusChestEnabled = buffer.readBoolean();
         this.hasStartWithMapEnabled = buffer.readBoolean();
 
@@ -162,7 +167,9 @@ public class PacketStartGame extends Packet {
         this.currentTick = buffer.readLLong();
         this.enchantmentSeed = buffer.readSignedVarInt();
 
-        NBTReader readerNoBuffer = new NBTReader(buffer.getBuffer(), ByteOrder.LITTLE_ENDIAN);
+        int amountOfBlocks = buffer.readUnsignedVarInt();
+        System.out.println("Amount of blocks: " + amountOfBlocks);
+        /*NBTReader readerNoBuffer = new NBTReader(buffer.getBuffer(), ByteOrder.LITTLE_ENDIAN);
         readerNoBuffer.setUseVarint(true);
 
         try {
@@ -170,13 +177,17 @@ public class PacketStartGame extends Packet {
             AssetAssembler.writeBlockPalette(compound);
         } catch (IOException | AllocationLimitReachedException e) {
             e.printStackTrace();
-        }
+        }*/
 
         List<StringShortPair> itemLegacyIds = new ArrayList<>();
         int itemListLength = buffer.readUnsignedVarInt();
         for (int i = 0; i < itemListLength; i++) {
             String itemName = buffer.readString();
             short legacyId = buffer.readLShort();
+            boolean itemUsedCompound = buffer.readBoolean();
+
+            System.out.println(itemName + " -> " + legacyId);
+
             itemLegacyIds.add(new StringShortPair(itemName, legacyId));
         }
 

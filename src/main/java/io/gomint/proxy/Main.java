@@ -7,6 +7,7 @@
 
 package io.gomint.proxy;
 
+import io.gomint.proxy.asset.AssetAssembler;
 import io.gomint.proxy.network.EncryptionHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,7 +45,9 @@ public class Main {
 		
 		// Generate proxy keypair:
 		EncryptionHandler.generateEncryptionKeys();
-		
+
+		new AssetAssembler();
+
 		Proxy proxy = new Proxy( ip, port );
 		try {
 			proxy.bind( bindAddress, listenPort );

@@ -41,12 +41,13 @@ public class PacketCraftingRecipes extends Packet {
         int count = buffer.readUnsignedVarInt();
         for ( int i = 0; i < count; i++ ) {
             int recipeType = buffer.readSignedVarInt();
+            System.out.println(recipeType);
+
             if ( recipeType < 0 ) {
                 continue;
             }
 
             switch ( recipeType ) {
-                case 6:
                 case 5:
                 case 0:
                     // Shapeless
@@ -71,11 +72,10 @@ public class PacketCraftingRecipes extends Packet {
                     UUID uuid = buffer.readUUID();
                     String block = buffer.readString();
                     int prio = buffer.readSignedVarInt();
-                    buffer.readUnsignedVarInt(); // Unneeded
+                    buffer.readUnsignedVarInt(); // Unneeded (net id)
 
                     AssetAssembler.addRecipe( name, uuid, (byte) recipeType, input, output, -1, -1, block, prio );
                     break;
-                case 7:
                 case 1:
                     // Shaped
                     name = buffer.readString();
@@ -131,7 +131,7 @@ public class PacketCraftingRecipes extends Packet {
 
                 case 4:
                     UUID uuid1 = buffer.readUUID();
-                    buffer.readUnsignedVarInt(); // Unneeded
+                    buffer.readUnsignedVarInt(); // Unneeded (net id)
                     // TODO: What is a multi recipe?
                     break;
                 default:

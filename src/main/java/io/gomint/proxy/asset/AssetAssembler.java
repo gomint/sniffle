@@ -2,13 +2,17 @@ package io.gomint.proxy.asset;
 
 import io.gomint.jraknet.PacketBuffer;
 import io.gomint.proxy.inventory.ItemStack;
+import io.gomint.proxy.util.DumpUtil;
 import io.gomint.proxy.util.StringShortPair;
 import io.gomint.taglib.AllocationLimitReachedException;
+import io.gomint.taglib.NBTReader;
 import io.gomint.taglib.NBTTagCompound;
 
 import io.gomint.taglib.NBTWriter;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.buffer.Unpooled;
+
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -16,6 +20,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteOrder;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -32,6 +37,34 @@ public class AssetAssembler {
     File file = new File("assets.dat");
     if (file.exists()) {
       file.delete();
+    }
+
+    try {
+      readBlockPalette();
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+  }
+
+  private static void readBlockPalette() throws IOException {
+    File nbtPalette = new File("palette.nbt");
+    byte[] data = Files.readAllBytes(nbtPalette.toPath());
+    NBTReader nbtReader = new NBTReader(Unpooled.wrappedBuffer(data), ByteOrder.BIG_ENDIAN);
+    nbtReader.setUseVarint(true);
+
+    List<Object> blockPalette = new ArrayList<>();
+
+    while (true) {
+      try {
+        NBTTagCompound compound = nbtReader.parse();
+        DumpUtil.dumpNBTCompund(compound);
+        blockPalette.add(compound);
+      } catch (AllocationLimitReachedException | IOException e) {
+        List<Object> nbtTags = compound.getList("blockPalette", true);
+        nbtTags.clear();
+        nbtTags.addAll(blockPalette);
+        return;
+      }
     }
   }
 
@@ -153,6 +186,7 @@ public class AssetAssembler {
 
     byte[] data = new byte[buffer.getRemaining()];
     buffer.readBytes(data);
+    buffer.release();
     return data;
   }
 
